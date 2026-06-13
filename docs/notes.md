@@ -383,3 +383,92 @@ Reconciled from the real `AquaOpcodes` table (§4 of these notes):
 Files updated: `viz/fixtures/trace.schema.json`, `viz/src/types.ts`, `viz/src/stepPanel.ts`.
 The `BALANCE_SETUP` framing step was replaced with the real `_salt` instruction (no synthetic step needed).
 `opcodeClass()` substring matching in stepPanel.ts still correctly routes all real opcode names to their CSS classes.
+
+---
+
+## 11. Correction pass (contracts) — BLOCKED on canonical router (flagged to orchestrator)
+
+A correction pass attempted four fix groups (canonical-router binding, quote==swap
+round-trip, CoreInvariants inheritance, trace `registers`/`quoteEqualsSwap`). **All
+four are blocked on Fix Group A**, which uncovered a hard discrepancy. Recorded here
+so it is not re-derived.
+
+### 11.1 The canonical deployed router is NOT byte-identical to vendored swap-vm 0.0.6
+
+The orchestrator's premise was: the canonical SwapVM router deployed at
+`0x8fDD04Dbf6111437B44bbca99C28882434e0958f` runs the production `AquaOpcodes`
+table, *byte-identical* to the `AquaOpcodesDebug` table our builders encode against,
+so the same program bytes execute unchanged. **This is false against the deployed
+bytecode at fork block 25,300,000.** Measured facts:
+
+- `AQUA()` on the deployed router = `0x499943…D936d31` ✓ (the same Aqua we ship into).
+- Deployed router runtime code size = **22,640 bytes**.
+- Our vendored `AquaSwapVMRouter` (swap-vm 0.0.6) compiles to **18,142 bytes**.
+  → 4,498-byte difference; different bytecode, hence a different opcode table.
+- The fresh-deploy router (vendored) executes our programs fine (the 13-test baseline
+  passes). The deployed router *rejects the identical program bytes*:
+  - Happy-path `[xycSwap][salt]` (bytes `0x110014080000000000000001`) →
+    `panic 0x11 (arithmetic underflow)` inside the instruction at byte 17.
+  - USDC→WETH same program → `DecayShouldBeCalledBeforeSwapAmountsComputation(10, 3e9)`.
+  - Composed program's curve byte → custom error `0xec286c06`.
+
+### 11.2 Probed opcode map of the DEPLOYED router (via per-byte ship+swap revert selectors)
+
+Shipping a single-frame program at each opcode byte and reading the revert selector
+maps the deployed router's table — and proves it is a **newer, shifted** version:
+
+| byte | deployed revert selector | instruction family (decoded) |
+|---|---|---|
+| 14–16 | `ControlsMissingTokenArg` (`0x6cac7aec`) | Controls.* token-jumps |
+| 17 | `panic 0x11` underflow (`0x4e487b71`) | an AMM/swap leaf |
+| 18 | `0xfd7d16b0` | XYC-family |
+| 19 | `0xec286c06` | XYCConcentrate-family |
+| 20 | `DecayMissingPeriodArg` (`0x9d584cd8`) | **Decay._decayXD** |
+| 21 | `MakerTraitsZeroAmountInNotAllowed` (`0x2087efa1`) | salt/fall-through |
+| 22–23 | `FeeMissingFeeBPS` (`0xa73c6824`) | **Fee.*** |
+| 24 | `ProgressiveFeeMissingFeeBPS` (`0x4f5033b3`) | **ProgressiveFee** |
+
+The decisive tell is byte 24 = `ProgressiveFeeMissingFeeBPS`: a `_progressiveFeeInXD`
+opcode that does **not exist anywhere in vendored swap-vm 0.0.6** (`AquaOpcodes` 0.0.6
+stops at `Extruction` and never exposes progressive fee — see §4 CAUTION / §8 / §9.4).
+So the deployed router is a LATER build with progressive-fee added and the opcode
+indices shifted. Our builder emits XYCSwap at byte 17, which on the deployed router
+is a different leaf — hence the underflow.
+
+> Side note this also resolves the long-standing §8 open question: `_progressiveFeeInXD`
+> IS reachable on the *deployed* Aqua router (byte 24), just not in our vendored 0.0.6
+> sources. A future pass that re-vendors the matching router version could use it
+> directly instead of the tiering/decay stand-ins.
+
+### 11.3 Why all four fix groups are blocked, and what was NOT done
+
+- **A (canonical router):** cannot bind to it without re-encoding programs against the
+  deployed router's (unknown-source) opcode table. Per the stop-and-flag rule I did
+  **not** silently fall back to the fresh-deploy router. The three fork test files +
+  TraceExporter remain on the fresh-deploy router at the green baseline.
+- **B (quote==swap on Aqua path):** the round-trip is meant to run *through the
+  canonical router*; blocked by A. (It would pass trivially on the fresh-deploy router,
+  but that is not what was asked.)
+- **C (CoreInvariants on canonical router):** same — the invariants are to be asserted
+  against the strategy executed on the canonical router; blocked by A.
+- **D (trace `registers` + `metadata.quoteEqualsSwap`):** the regenerated traces are to
+  come from execution on the canonical router; blocked by A.
+
+### 11.4 Options for the orchestrator (pick one, then unblock B/C/D)
+
+1. **Re-vendor the matching router version.** Identify the deployed router's swap-vm
+   release (the one with `_progressiveFeeInXD` at byte 24 / shifted table) and vendor
+   THAT `AquaOpcodes`/router source over RAW github. Our builders re-resolve opcode
+   bytes by function pointer via `ProgramBuilder.findOpcode`, so re-vendoring the right
+   opcode table auto-fixes the emitted bytes — no builder edits needed — and A→D all
+   proceed against the real deployed router.
+2. **Accept the fresh-deploy router** as the canonical execution surface for the demo
+   (it IS the same swap-vm protocol, same Aqua, just self-deployed) and explicitly
+   relax item 1. Then B/C/D run on the fresh-deploy router and pass. Lower judging
+   score for "uses the live deployment," but fully honest and green today.
+3. **Hybrid:** keep fresh-deploy for execution (A/B/C/D green now) AND add one
+   read-only assertion that the deployed router exists with matching `AQUA()` and a
+   `ProgressiveFee` opcode, documenting the version gap — captures the "live deployment"
+   narrative without running unverifiable re-encoded bytes through it.
+
+No tolerances were loosened and no pass was faked. Baseline remains 13/13 green.
