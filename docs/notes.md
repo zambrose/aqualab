@@ -285,3 +285,55 @@ sets `amountOut` (exact-in). `decayPeriod==0` and `feeBps==0` omit those frames
 entirely, so the trace exporter must decode whatever frames are actually present
 rather than assume all four. The builder is
 `src/ComposedStrategyBuilder.sol::buildComposedProgram(PoolParams)`.
+
+---
+
+## 10. Agent 3 — Trace exporter implementation
+
+### 10.1 Trace generation mechanism
+
+Two real traces are exported by `test/TraceExporter.t.sol::test_ExportTraces`:
+
+- **Small swap**: 1 WETH → USDC on a constant-product (`_xycSwapXD`) pool with fee+decay.
+- **Large swap**: 5 WETH → USDC on a concentrated-liquidity (`_xycConcentrateGrowLiquidity2D`) pool with fee+decay.
+
+Both are FIRST swaps on fresh pools. The traces faithfully show:
+- Both `_decayXD` steps with `elapsedSeconds=0` and `currentOffsetIn/Out=0` (honest: no prior state).
+- `_flatFeeAmountInXD` with a higher ABSOLUTE fee on the large swap (0.015 WETH vs 0.003 WETH).
+- The AMM leaf computes the same formula but the large swap shows concentrated-liquidity amplification.
+
+The final step's `params.amountOut` is asserted to equal the real on-chain measured `swapAmountOut` via `assertEq` in the test, ensuring the trace cannot drift from reality.
+
+### 10.2 Decay offsets — why both first-swap traces show offset=0
+
+`Decay._decayXD` stores offsets per `(orderHash, token, buyOrSell)` direction. For a WETH→USDC swap:
+- **Reads** (for virtual reserve adjustment): `_offsets[hash][WETH][true]` and `_offsets[hash][USDC][false]`
+- **Writes** (after inner loop): `_offsets[hash][WETH][false]` and `_offsets[hash][USDC][true]`
+
+This is Mooniswap-style MEV protection: the written offsets only activate for the **reverse** direction (USDC→WETH). A second WETH→USDC same-direction swap does NOT see the offsets from the first (it reads different keys). Decay therefore primarily protects against sandwich attacks and reverse-direction follow-up trades.
+
+### 10.3 Regen command (one command to regenerate both traces from scratch)
+
+```bash
+export PATH="$HOME/.foundry/bin:$PATH"
+set -a; source .env; set +a
+forge test --match-contract TraceExporter && node viz/scripts/copy-traces.mjs && cd viz && npm run validate
+```
+
+This runs the fork test, copies `./traces/*.json` to `viz/fixtures/*.fixture.json`, and validates both against `trace.schema.json`.
+
+### 10.4 Opcode name changes (schema + types + stepPanel)
+
+Reconciled from the real `AquaOpcodes` table (§4 of these notes):
+
+| Old aspirational name (placeholder) | Real opcode name | AquaOpcodes index |
+|---|---|---|
+| `BALANCE_SETUP` | `_salt` | 21 |
+| `_progressiveFeeInXD` | `_flatFeeAmountInXD` | 22 |
+| `_xycConcentrateGrowLiquidityXD` | `_xycConcentrateGrowLiquidity2D` | 19 |
+| (new) | `_xycSwapXD` | 18 |
+| `_decayXD` | `_decayXD` | 20 (unchanged) |
+
+Files updated: `viz/fixtures/trace.schema.json`, `viz/src/types.ts`, `viz/src/stepPanel.ts`.
+The `BALANCE_SETUP` framing step was replaced with the real `_salt` instruction (no synthetic step needed).
+`opcodeClass()` substring matching in stepPanel.ts still correctly routes all real opcode names to their CSS classes.
