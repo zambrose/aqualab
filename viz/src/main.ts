@@ -52,7 +52,7 @@ function render(): void {
   const step = currentTrace.steps[currentStep];
   const prevStep = currentStep > 0 ? currentTrace.steps[currentStep - 1] : null;
 
-  renderStepPanel(stepContainer, step, currentTrace);
+  renderStepPanel(stepContainer, step, currentTrace, prevStep);
   renderPipelineBreadcrumb(pipelineRow, currentTrace.steps, currentStep);
 
   // Pipeline breadcrumb click
@@ -74,6 +74,9 @@ function render(): void {
 
   // Meta bar
   const md = currentTrace.metadata;
+  const qesBadge = md.quoteEqualsSwap
+    ? `<span class="meta-qes-badge meta-qes-pass" title="The router's static quote() returned exactly the same (amountIn, amountOut) as the executed swap() — the trace's pricing is quote/swap-consistent.">quote == swap ✓</span>`
+    : `<span class="meta-qes-badge meta-qes-fail" title="quote() and swap() produced different amounts — the trace may reflect a live price movement or protocol quirk.">quote ≠ swap ✗</span>`;
   metaBar.innerHTML = `
     <span class="meta-item"><span class="meta-label">Trace</span><span class="meta-val">${md.label ?? 'Unnamed'}</span></span>
     <span class="meta-sep">·</span>
@@ -84,6 +87,8 @@ function render(): void {
     <span class="meta-item"><span class="meta-label">Direction</span><span class="meta-val">${md.swapDirection.replace('_', ' → ')}</span></span>
     <span class="meta-sep">·</span>
     <span class="meta-item"><span class="meta-label">Total fee</span><span class="meta-val fee-val">${md.totalFeesBps} bps</span></span>
+    <span class="meta-sep">·</span>
+    ${qesBadge}
   `;
 
   // Kick off curve animation to new swap point
