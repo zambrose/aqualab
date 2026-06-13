@@ -1,0 +1,325 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/zambrose/aqualab/viz/fixtures/trace.schema.json",
+  "title": "SwapVM Instruction Trace",
+  "description": "Schema for a SwapVM strategy execution trace produced by AquaLab. Version 1.0.",
+  "type": "object",
+  "required": ["schemaVersion", "metadata", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version — must be '1.0' for this draft."
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "strategyHash",
+        "blockNumber",
+        "txHash",
+        "tokenA",
+        "tokenB",
+        "swapAmountIn",
+        "swapAmountOut",
+        "swapDirection",
+        "totalFeesBps"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "strategyHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{64}$",
+          "description": "32-byte keccak256 strategy hash (hex, 0x-prefixed)."
+        },
+        "blockNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Block in which the swap executed (or simulated)."
+        },
+        "txHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{64}$",
+          "description": "Transaction hash. Use a descriptive placeholder (e.g. 0x000...0001) for simulated traces."
+        },
+        "tokenA": {
+          "$ref": "#/$defs/tokenInfo",
+          "description": "First token (conventionally the token sold by the maker, e.g. WETH)."
+        },
+        "tokenB": {
+          "$ref": "#/$defs/tokenInfo",
+          "description": "Second token (conventionally the token bought by the maker, e.g. USDC)."
+        },
+        "swapAmountIn": {
+          "type": "string",
+          "pattern": "^[0-9]+$",
+          "description": "Gross input amount (smallest unit, base-10 string to preserve uint256)."
+        },
+        "swapAmountOut": {
+          "type": "string",
+          "pattern": "^[0-9]+$",
+          "description": "Net output amount after all fees and decay adjustments."
+        },
+        "swapDirection": {
+          "type": "string",
+          "enum": ["A_TO_B", "B_TO_A"],
+          "description": "Whether the taker sells tokenA and buys tokenB, or vice-versa."
+        },
+        "totalFeesBps": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Effective total fee in basis points applied across all steps."
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional human-readable label for the trace (shown in UI dropdown)."
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered list of SwapVM instruction executions, from first to last.",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    }
+  },
+  "$defs": {
+    "tokenInfo": {
+      "type": "object",
+      "required": ["address", "symbol", "decimals"],
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{40}$"
+        },
+        "symbol": { "type": "string" },
+        "decimals": { "type": "integer", "minimum": 0, "maximum": 18 }
+      }
+    },
+    "bigint": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Non-negative integer stored as base-10 string (safe for uint256)."
+    },
+    "hexBytes": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]*$"
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "stepIndex",
+        "opcode",
+        "description",
+        "params",
+        "balancesBefore",
+        "balancesAfter",
+        "curveState"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "stepIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Zero-based index of this step in the pipeline."
+        },
+        "opcode": {
+          "type": "string",
+          "description": "SwapVM opcode name exactly as it appears in the instruction set.",
+          "examples": [
+            "_xycConcentrateGrowLiquidityXD",
+            "_progressiveFeeInXD",
+            "_decayXD",
+            "_xycSwapXD",
+            "BALANCE_SETUP"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable one-liner explaining what this step does in context."
+        },
+        "params": {
+          "type": "object",
+          "description": "Decoded opcode parameters — shape varies by opcode (see below).",
+          "oneOf": [
+            { "$ref": "#/$defs/paramsBalanceSetup" },
+            { "$ref": "#/$defs/paramsXycConcentrateGrowLiquidityXD" },
+            { "$ref": "#/$defs/paramsProgressiveFeeInXD" },
+            { "$ref": "#/$defs/paramsDecayXD" },
+            { "$ref": "#/$defs/paramsGeneric" }
+          ]
+        },
+        "balancesBefore": { "$ref": "#/$defs/balanceSnapshot" },
+        "balancesAfter": { "$ref": "#/$defs/balanceSnapshot" },
+        "curveState": { "$ref": "#/$defs/curveState" },
+        "gasUsed": {
+          "type": "integer",
+          "description": "Gas consumed by this instruction (optional, for display)."
+        },
+        "revertReason": {
+          "type": ["string", "null"],
+          "description": "Non-null if this step reverted (should only happen in error traces)."
+        }
+      }
+    },
+    "paramsBalanceSetup": {
+      "type": "object",
+      "required": ["type", "makerDeposit", "takerDeposit"],
+      "properties": {
+        "type": { "type": "string", "const": "BALANCE_SETUP" },
+        "makerDeposit": { "$ref": "#/$defs/tokenAmount" },
+        "takerDeposit": { "$ref": "#/$defs/tokenAmount" }
+      }
+    },
+    "paramsXycConcentrateGrowLiquidityXD": {
+      "type": "object",
+      "required": ["type", "lowerTick", "upperTick", "currentTick", "liquidity", "sqrtPriceX96"],
+      "properties": {
+        "type": { "type": "string", "const": "_xycConcentrateGrowLiquidityXD" },
+        "lowerTick": { "type": "integer", "description": "Lower tick boundary of the concentrated range." },
+        "upperTick": { "type": "integer", "description": "Upper tick boundary of the concentrated range." },
+        "currentTick": { "type": "integer", "description": "Current tick before the swap." },
+        "liquidity": { "$ref": "#/$defs/bigint", "description": "Active liquidity in the range (uint128)." },
+        "sqrtPriceX96": { "$ref": "#/$defs/bigint", "description": "Current sqrt(price) in X96 fixed-point (uint160)." },
+        "amountSpecified": { "$ref": "#/$defs/bigint", "description": "Exact amount of the input token fed to the AMM." },
+        "zeroForOne": { "type": "boolean", "description": "True if swap direction is tokenA → tokenB." },
+        "concentratedRangePct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Percentage of full-range liquidity that this concentrated range represents."
+        }
+      }
+    },
+    "paramsProgressiveFeeInXD": {
+      "type": "object",
+      "required": ["type", "baseFeesBps", "progressiveRate", "appliedFeesBps"],
+      "properties": {
+        "type": { "type": "string", "const": "_progressiveFeeInXD" },
+        "baseFeesBps": {
+          "type": "number",
+          "description": "Base fee in basis points before progressive scaling."
+        },
+        "progressiveRate": {
+          "type": "number",
+          "description": "Rate at which fee grows with trade size (bps per unit notional, e.g. bps per 1e18)."
+        },
+        "appliedFeesBps": {
+          "type": "number",
+          "description": "Effective fee basis points after applying the progressive formula to this trade."
+        },
+        "tradeNotional": {
+          "$ref": "#/$defs/bigint",
+          "description": "Notional amount (input token, native units) used in the progressive fee calculation."
+        }
+      }
+    },
+    "paramsDecayXD": {
+      "type": "object",
+      "required": ["type", "halfLifeSeconds", "elapsedSeconds", "decayFactor", "virtualReservesBefore", "virtualReservesAfter"],
+      "properties": {
+        "type": { "type": "string", "const": "_decayXD" },
+        "halfLifeSeconds": {
+          "type": "number",
+          "description": "Half-life of the virtual reserve decay in seconds."
+        },
+        "elapsedSeconds": {
+          "type": "number",
+          "description": "Seconds elapsed since last interaction (drives decay magnitude)."
+        },
+        "decayFactor": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "exp(-λ·t) factor applied to virtual reserves (0=fully decayed, 1=no decay)."
+        },
+        "virtualReservesBefore": { "$ref": "#/$defs/reservePair" },
+        "virtualReservesAfter": { "$ref": "#/$defs/reservePair" }
+      }
+    },
+    "paramsGeneric": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "tokenAmount": {
+      "type": "object",
+      "required": ["token", "amount"],
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "type": "string",
+          "enum": ["tokenA", "tokenB"],
+          "description": "Reference to tokenA or tokenB defined in metadata."
+        },
+        "amount": { "$ref": "#/$defs/bigint" }
+      }
+    },
+    "balanceSnapshot": {
+      "type": "object",
+      "required": ["makerTokenA", "makerTokenB", "takerTokenA", "takerTokenB"],
+      "additionalProperties": false,
+      "description": "Token balances at a specific point in execution.",
+      "properties": {
+        "makerTokenA": { "$ref": "#/$defs/bigint", "description": "Maker's tokenA balance (smallest unit)." },
+        "makerTokenB": { "$ref": "#/$defs/bigint", "description": "Maker's tokenB balance (smallest unit)." },
+        "takerTokenA": { "$ref": "#/$defs/bigint", "description": "Taker's tokenA balance (smallest unit)." },
+        "takerTokenB": { "$ref": "#/$defs/bigint", "description": "Taker's tokenB balance (smallest unit)." }
+      }
+    },
+    "reservePair": {
+      "type": "object",
+      "required": ["reserveA", "reserveB"],
+      "additionalProperties": false,
+      "properties": {
+        "reserveA": { "$ref": "#/$defs/bigint" },
+        "reserveB": { "$ref": "#/$defs/bigint" }
+      }
+    },
+    "curveState": {
+      "type": "object",
+      "required": ["realReserves", "virtualReserves", "spotPriceAInB", "feeBps"],
+      "additionalProperties": false,
+      "description": "AMM curve state after this step completes.",
+      "properties": {
+        "realReserves": {
+          "$ref": "#/$defs/reservePair",
+          "description": "Real (physical) token reserves in the pool."
+        },
+        "virtualReserves": {
+          "$ref": "#/$defs/reservePair",
+          "description": "Virtual reserves including MEV-protection offset from _decayXD."
+        },
+        "spotPriceAInB": {
+          "type": "number",
+          "description": "Spot price: how many units of tokenB per 1 unit of tokenA (human-readable, e.g. 3000 for $3000/ETH)."
+        },
+        "feeBps": {
+          "type": "number",
+          "description": "Fee in basis points applied at this step."
+        },
+        "concentratedRange": {
+          "type": ["object", "null"],
+          "description": "Non-null when active concentrated range exists.",
+          "required": ["priceLower", "priceUpper", "isInRange"],
+          "additionalProperties": false,
+          "properties": {
+            "priceLower": { "type": "number", "description": "Lower price bound of the concentrated range (tokenB per tokenA)." },
+            "priceUpper": { "type": "number", "description": "Upper price bound of the concentrated range (tokenB per tokenA)." },
+            "isInRange": { "type": "boolean", "description": "Whether the current spot price is within [priceLower, priceUpper]." }
+          }
+        },
+        "swapPointX": {
+          "type": ["number", "null"],
+          "description": "Normalised X-coordinate of the swap point on the price curve (0–1), for animation."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,198 @@
+{
+  "schemaVersion": "1.0",
+  "metadata": {
+    "label": "Small Swap — 0.1 WETH → USDC",
+    "strategyHash": "0xa3b4c5d6e7f8091011121314151617181920212223242526272829303132333435",
+    "blockNumber": 20145678,
+    "txHash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+    "tokenA": {
+      "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "symbol": "WETH",
+      "decimals": 18
+    },
+    "tokenB": {
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "symbol": "USDC",
+      "decimals": 6
+    },
+    "swapAmountIn": "100000000000000000",
+    "swapAmountOut": "297541200",
+    "swapDirection": "A_TO_B",
+    "totalFeesBps": 5
+  },
+  "steps": [
+    {
+      "stepIndex": 0,
+      "opcode": "BALANCE_SETUP",
+      "description": "Initialise maker and taker virtual balances before executing the strategy.",
+      "params": {
+        "type": "BALANCE_SETUP",
+        "makerDeposit": { "token": "tokenA", "amount": "100000000000000000" },
+        "takerDeposit": { "token": "tokenB", "amount": "300000000000" }
+      },
+      "balancesBefore": {
+        "makerTokenA": "0",
+        "makerTokenB": "0",
+        "takerTokenA": "0",
+        "takerTokenB": "0"
+      },
+      "balancesAfter": {
+        "makerTokenA": "100000000000000000",
+        "makerTokenB": "0",
+        "takerTokenA": "0",
+        "takerTokenB": "300000000000"
+      },
+      "curveState": {
+        "realReserves": {
+          "reserveA": "1000000000000000000000",
+          "reserveB": "3000000000000"
+        },
+        "virtualReserves": {
+          "reserveA": "1000000000000000000000",
+          "reserveB": "3000000000000"
+        },
+        "spotPriceAInB": 3000.00,
+        "feeBps": 0,
+        "concentratedRange": null,
+        "swapPointX": null
+      }
+    },
+    {
+      "stepIndex": 1,
+      "opcode": "_xycConcentrateGrowLiquidityXD",
+      "description": "Concentrated-liquidity constant-product AMM step: route the swap through the [2700, 3300] USDC/WETH concentrated range where 80% of liquidity is focused.",
+      "params": {
+        "type": "_xycConcentrateGrowLiquidityXD",
+        "lowerTick": -887220,
+        "upperTick": -886200,
+        "currentTick": -887100,
+        "liquidity": "8000000000000000000000",
+        "sqrtPriceX96": "4363802441520177594044",
+        "amountSpecified": "100000000000000000",
+        "zeroForOne": true,
+        "concentratedRangePct": 80
+      },
+      "balancesBefore": {
+        "makerTokenA": "100000000000000000",
+        "makerTokenB": "0",
+        "takerTokenA": "0",
+        "takerTokenB": "300000000000"
+      },
+      "balancesAfter": {
+        "makerTokenA": "0",
+        "makerTokenB": "297690000",
+        "takerTokenA": "100000000000000000",
+        "takerTokenB": "299702310000"
+      },
+      "curveState": {
+        "realReserves": {
+          "reserveA": "1000100000000000000000",
+          "reserveB": "2999702310000"
+        },
+        "virtualReserves": {
+          "reserveA": "1250100000000000000000",
+          "reserveB": "3749702310000"
+        },
+        "spotPriceAInB": 2998.51,
+        "feeBps": 0,
+        "concentratedRange": {
+          "priceLower": 2700.00,
+          "priceUpper": 3300.00,
+          "isInRange": true
+        },
+        "swapPointX": 0.503
+      }
+    },
+    {
+      "stepIndex": 2,
+      "opcode": "_progressiveFeeInXD",
+      "description": "Progressive fee: base 3 bps + progressive component. Small trade (0.1 WETH ≈ $300) barely triggers scaling — effective fee is 5 bps.",
+      "params": {
+        "type": "_progressiveFeeInXD",
+        "baseFeesBps": 3,
+        "progressiveRate": 20,
+        "appliedFeesBps": 5,
+        "tradeNotional": "100000000000000000"
+      },
+      "balancesBefore": {
+        "makerTokenA": "0",
+        "makerTokenB": "297690000",
+        "takerTokenA": "100000000000000000",
+        "takerTokenB": "299702310000"
+      },
+      "balancesAfter": {
+        "makerTokenA": "0",
+        "makerTokenB": "297541200",
+        "takerTokenA": "100000000000000000",
+        "takerTokenB": "299702458800"
+      },
+      "curveState": {
+        "realReserves": {
+          "reserveA": "1000100000000000000000",
+          "reserveB": "2999702310000"
+        },
+        "virtualReserves": {
+          "reserveA": "1250100000000000000000",
+          "reserveB": "3749702310000"
+        },
+        "spotPriceAInB": 2998.51,
+        "feeBps": 5,
+        "concentratedRange": {
+          "priceLower": 2700.00,
+          "priceUpper": 3300.00,
+          "isInRange": true
+        },
+        "swapPointX": 0.503
+      }
+    },
+    {
+      "stepIndex": 3,
+      "opcode": "_decayXD",
+      "description": "Time-decay MEV protection: only 12 seconds since last interaction — decay is very mild (factor 0.994). Virtual reserves barely shift; spot price effectively unchanged.",
+      "params": {
+        "type": "_decayXD",
+        "halfLifeSeconds": 120,
+        "elapsedSeconds": 12,
+        "decayFactor": 0.9942,
+        "virtualReservesBefore": {
+          "reserveA": "1250100000000000000000",
+          "reserveB": "3749702310000"
+        },
+        "virtualReservesAfter": {
+          "reserveA": "1242850020000000000000",
+          "reserveB": "3727985490000"
+        }
+      },
+      "balancesBefore": {
+        "makerTokenA": "0",
+        "makerTokenB": "297541200",
+        "takerTokenA": "100000000000000000",
+        "takerTokenB": "299702458800"
+      },
+      "balancesAfter": {
+        "makerTokenA": "0",
+        "makerTokenB": "297541200",
+        "takerTokenA": "100000000000000000",
+        "takerTokenB": "299702458800"
+      },
+      "curveState": {
+        "realReserves": {
+          "reserveA": "1000100000000000000000",
+          "reserveB": "2999702310000"
+        },
+        "virtualReserves": {
+          "reserveA": "1242850020000000000000",
+          "reserveB": "3727985490000"
+        },
+        "spotPriceAInB": 2997.14,
+        "feeBps": 5,
+        "concentratedRange": {
+          "priceLower": 2700.00,
+          "priceUpper": 3300.00,
+          "isInRange": true
+        },
+        "swapPointX": 0.503
+      }
+    }
+  ]
+}
