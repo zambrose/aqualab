@@ -25,6 +25,8 @@ export interface TraceMetadata {
   swapAmountOut: string;
   swapDirection: 'A_TO_B' | 'B_TO_A';
   totalFeesBps: number;
+  /** True when the router's static quote() returned exactly the same (amountIn, amountOut) as the real swap() — i.e. the trace's pricing is quote/swap-consistent. */
+  quoteEqualsSwap: boolean;
   label?: string;
 }
 
@@ -134,11 +136,37 @@ export type OpcodeParams =
   | ParamsXycConcentrateGrowLiquidity2D
   | ParamsGeneric;
 
+/**
+ * The 5 SwapVM `SwapRegisters` (Context.swap, see swap-vm VM.sol) AS OF AFTER
+ * the instruction at this step executed. All values are base-10 bigint strings
+ * (uint256-safe).
+ *
+ * IMPORTANT: balanceIn/balanceOut are VM-relative (the "in" and "out" token of
+ * the current swap), NOT necessarily tokenA/tokenB. Use `metadata.swapDirection`
+ * to resolve which real token each register corresponds to:
+ *   A_TO_B → balanceIn=tokenA, balanceOut=tokenB
+ *   B_TO_A → balanceIn=tokenB, balanceOut=tokenA
+ */
+export interface SwapRegisters {
+  /** ctx.swap.balanceIn after this step — virtual reserve of the input token. */
+  balanceIn: string;
+  /** ctx.swap.balanceOut after this step — virtual reserve of the output token. */
+  balanceOut: string;
+  /** ctx.swap.amountIn after this step — taker's gross input (may be reduced by fee wrappers). */
+  amountIn: string;
+  /** ctx.swap.amountOut after this step — computed output (set by the AMM leaf). */
+  amountOut: string;
+  /** ctx.swap.amountNetPulled after this step — net input pulled to the maker (protocol-fee opcodes only; 0 in flat-fee programs). */
+  amountNetPulled: string;
+}
+
 export interface TraceStep {
   stepIndex: number;
   opcode: string;
   description: string;
   params: OpcodeParams;
+  /** SwapVM registers snapshot after this instruction executed. */
+  registers: SwapRegisters;
   balancesBefore: BalanceSnapshot;
   balancesAfter: BalanceSnapshot;
   curveState: CurveState;
