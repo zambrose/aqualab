@@ -24,13 +24,14 @@ let lastFrameTime = 0;
 let rafId = 0;
 
 // ---- DOM refs ----
-const traceSelect  = document.getElementById('trace-select') as HTMLSelectElement;
-const prevBtn      = document.getElementById('btn-prev') as HTMLButtonElement;
-const nextBtn      = document.getElementById('btn-next') as HTMLButtonElement;
-const stepContainer = document.getElementById('step-panel') as HTMLElement;
-const pipelineRow  = document.getElementById('pipeline-row') as HTMLElement;
-const canvas       = document.getElementById('curve-canvas') as HTMLCanvasElement;
-const metaBar      = document.getElementById('meta-bar') as HTMLElement;
+const traceSelect    = document.getElementById('trace-select') as HTMLSelectElement;
+const prevBtn        = document.getElementById('btn-prev') as HTMLButtonElement;
+const nextBtn        = document.getElementById('btn-next') as HTMLButtonElement;
+const stepContainer  = document.getElementById('step-panel') as HTMLElement;
+const pipelineRow    = document.getElementById('pipeline-row') as HTMLElement;
+const canvas         = document.getElementById('curve-canvas') as HTMLCanvasElement;
+const metaBar        = document.getElementById('meta-bar') as HTMLElement;
+const progressFill   = document.getElementById('progress-bar-fill') as HTMLElement;
 
 // ---- Resize canvas ----
 function resizeCanvas(): void {
@@ -63,6 +64,12 @@ function render(): void {
   prevBtn.disabled = currentStep === 0;
   nextBtn.disabled = currentStep === currentTrace.steps.length - 1;
 
+  // Progress bar
+  const pct = currentTrace.steps.length > 1
+    ? (currentStep / (currentTrace.steps.length - 1)) * 100
+    : 100;
+  progressFill.style.width = `${pct}%`;
+
   // Meta bar
   const md = currentTrace.metadata;
   metaBar.innerHTML = `
@@ -87,6 +94,10 @@ function goToStep(index: number): void {
   if (clamped === currentStep) return;
   currentStep = clamped;
   render();
+  // Flash the step panel to signal the transition
+  stepContainer.classList.remove('flash');
+  void stepContainer.offsetWidth; // force reflow to restart animation
+  stepContainer.classList.add('flash');
 }
 
 // ---- Animation loop ----
