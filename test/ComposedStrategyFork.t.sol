@@ -167,8 +167,16 @@ contract ComposedStrategyForkTest is Test {
 
         uint256 takerUsdcBefore = IERC20(USDC).balanceOf(address(taker));
 
+        // quote == swap round-trip through the full composed (decay+fee+AMM)
+        // program: the static preview must match real execution exactly.
+        bytes memory takerData = _takerData(true);
+        (uint256 quotedIn, uint256 quotedOut) = taker.quote(order, WETH, USDC, amountIn, takerData);
+
         (uint256 reportedIn, uint256 reportedOut) =
-            taker.swap(order, WETH, USDC, amountIn, _takerData(true));
+            taker.swap(order, WETH, USDC, amountIn, takerData);
+
+        assertEq(quotedIn, reportedIn, "composed: quote amountIn == swap amountIn");
+        assertEq(quotedOut, reportedOut, "composed: quote amountOut == swap amountOut");
 
         assertEq(reportedIn, amountIn, "exact-in consumes full input");
         assertEq(reportedOut, expectedOut, "fee-adjusted x*y=k output matches");

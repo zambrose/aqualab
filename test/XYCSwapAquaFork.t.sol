@@ -148,8 +148,19 @@ contract XYCSwapAquaForkTest is Test {
         // out = reserveOut * amountIn / (reserveIn + amountIn)
         uint256 expectedOut = RESERVE_USDC * amountIn / (RESERVE_WETH + amountIn);
 
+        // quote() is the static preview of swap(). With IDENTICAL taker data it
+        // MUST return exactly what the real swap consumes/produces — otherwise a
+        // taker's pre-trade quote could differ from execution. Assert that
+        // round-trip equality before doing the real swap.
+        bytes memory takerData = _takerData(true);
+        (uint256 quotedIn, uint256 quotedOut) = taker.quote(order, WETH, USDC, amountIn, takerData);
+
         (uint256 reportedIn, uint256 reportedOut) =
-            taker.swap(order, WETH, USDC, amountIn, _takerData(true));
+            taker.swap(order, WETH, USDC, amountIn, takerData);
+
+        // --- quote == swap round-trip ---
+        assertEq(quotedIn, reportedIn, "quote amountIn must equal swap amountIn");
+        assertEq(quotedOut, reportedOut, "quote amountOut must equal swap amountOut");
 
         // --- amount accounting ---
         assertEq(reportedIn, amountIn, "exact-in: amountIn consumed");

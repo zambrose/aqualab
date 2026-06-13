@@ -24,6 +24,19 @@ contract AquaLabTaker {
         IERC20(token).approve(address(ROUTER), amount);
     }
 
+    /// @notice Static preview of a swap through the router (no state change).
+    /// @dev Mirrors `swap` arg-for-arg so a quote can be compared to the real
+    ///      swap result under identical taker data (quote==swap round-trip).
+    function quote(
+        ISwapVM.Order calldata order,
+        address tokenIn,
+        address tokenOut,
+        uint256 amount,
+        bytes calldata takerTraitsAndData
+    ) external view returns (uint256 amountIn, uint256 amountOut) {
+        (amountIn, amountOut,) = ROUTER.quote(order, tokenIn, tokenOut, amount, takerTraitsAndData);
+    }
+
     /// @notice Execute a swap through the router.
     function swap(
         ISwapVM.Order calldata order,
