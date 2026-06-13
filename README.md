@@ -4,9 +4,17 @@ A composed **1inch SwapVM** strategy shipped into the live **Aqua** shared-liqui
 deployment, plus an instruction-trace visualizer. ETHGlobal NY 2026 — "Build an
 Aqua App" bounty.
 
-> This README documents the **happy path** (the critical-path foundation) and the
-> **composed strategy** (concentrated liquidity + fee + decay). The visualizer is
-> layered on top by a later stage.
+Three parts, all working end-to-end on a mainnet fork:
+
+1. **A composed SwapVM strategy** — concentrated liquidity (or constant-product
+   fallback) wrapped with a fee instruction and a time-decay MEV-protection
+   instruction, shipped into the **live Aqua deployment** and swapped against
+   with real WETH/USDC transfers ([the strategy](#the-composed-strategy-the-sophisticated-position)).
+2. **Foundry fork tests** proving the on-chain token transfers, plus fork-free
+   curve-invariant property tests ([tests](#curve-invariant-property-tests)).
+3. **An instruction-trace visualizer** that renders the real per-opcode execution
+   — the instruction pipeline, balance deltas, and AMM curve state — step by step
+   ([visualizer](#trace-visualizer)).
 
 ## What works today
 
@@ -134,6 +142,37 @@ fuzz tests mirroring the vendored formulas:
 composed strategy ships + swaps through the **live Aqua** deployment with real
 WETH/USDC transfers, including the two-swap progressive-cost scenario.
 
+## Trace visualizer
+
+The [`viz/`](viz/) app is a static Vite/TypeScript UI that renders a **real**
+execution trace of the composed strategy — no backend, no wallet, no chain access
+at view time. It steps through the instruction pipeline one opcode at a time,
+showing the decoded params, the maker/taker balance deltas, and the AMM price
+curve (constant-product hyperbola with the concentrated range highlighted, the
+swap point moving along it) mutating per step.
+
+The traces it renders are not hand-drawn — they are exported from the fork tests.
+[`test/TraceExporter.t.sol`](test/TraceExporter.t.sol) runs the real composed swap
+and, for each step, derives the intermediate VM state from the **same** decay → fee
+→ AMM math the contracts use; it `assertEq`s the trace's final output against the
+on-chain measured `taker.swap(...)` output, so the visualization cannot silently
+drift from reality. The exporter writes JSON validated against
+[`viz/fixtures/trace.schema.json`](viz/fixtures/trace.schema.json).
+
+```bash
+# regenerate both traces from a live fork run, then validate them
+forge test --match-contract TraceExporter \
+  && node viz/scripts/copy-traces.mjs \
+  && (cd viz && npm run validate)
+
+# run the visualizer
+cd viz && npm install && npm run dev      # http://localhost:5173
+```
+
+The dropdown switches between the small swap (1 WETH, constant-product + fee +
+decay → 2961.47 USDC) and the large swap (5 WETH, concentrated + fee + decay →
+14954.22 USDC), both at the pinned fork block.
+
 ## Layout
 
 ```
@@ -143,7 +182,11 @@ src/vendor/ProgramBuilder.sol    SwapVM program encoder ([opcode][len][args] fra
 test/XYCSwapAquaFork.t.sol       Mainnet-fork ship + WETH/USDC swap + dock tests (happy path)
 test/ComposedStrategyFork.t.sol  Fork tests: composed fee+decay+AMM + two-swap progressive scenario
 test/CurveInvariants.t.sol       Fork-free fuzz property tests on curve/fee/decay math
+test/TraceExporter.t.sol         Runs real swaps, exports per-opcode JSON traces
 test/AquaLabTaker.sol            Minimal taker (useTransferFromAndAquaPush mode)
+viz/                             Static trace visualizer (Vite/TS); renders real traces
+viz/fixtures/trace.schema.json   JSON Schema for execution traces (validated in CI loop)
+viz/scripts/copy-traces.mjs      Promotes forge-exported traces into viz fixtures
 lib/swap-vm, lib/aqua            Vendored 1inch protocol sources (ground truth)
 docs/notes.md                    Protocol discoveries for downstream work
 ```
@@ -168,6 +211,8 @@ forge test --match-contract ComposedStrategyForkTest -vv # composed fee+decay+AM
 forge test --match-contract CurveInvariantsTest -vv      # fork-free property tests
 ```
 
-Expected: 11 passing tests. The happy-path WETH→USDC test logs ~2970.297 USDC for
-1 WETH at the pinned fork block 25,300,000; the composed concentrated test returns
-~2996.67 USDC (deeper band) vs ~2961.47 for plain `x·y=k` with the same fee.
+Expected: **12 passing tests**. The happy-path WETH→USDC test logs ~2970.297 USDC
+for 1 WETH at the pinned fork block 25,300,000; the composed concentrated test
+returns ~2996.67 USDC (deeper band) vs ~2961.47 for plain `x·y=k` with the same
+fee. See [Trace visualizer](#trace-visualizer) to export those runs as a trace and
+step through them in the UI.
