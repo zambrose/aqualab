@@ -7,12 +7,14 @@ import { renderStepPanel, renderPipelineBreadcrumb } from './stepPanel.js';
 import { drawCurve, createCurveAnimState, animateTo, tickAnimation } from './curve.js';
 
 // ---- Load fixtures (Vite will bundle these as JSON) ----
-import smallSwap from '../fixtures/trace-small-swap.fixture.json';
-import largeSwap from '../fixtures/trace-large-swap.fixture.json';
+import smallSwap   from '../fixtures/trace-small-swap.fixture.json';
+import largeSwap   from '../fixtures/trace-large-swap.fixture.json';
+import twoSwapDecay from '../fixtures/trace-two-swap-decay.fixture.json';
 
 const TRACES: Record<string, Trace> = {
-  small: smallSwap as Trace,
-  large: largeSwap as Trace,
+  small:        smallSwap    as Trace,
+  large:        largeSwap    as Trace,
+  twoSwapDecay: twoSwapDecay as Trace,
 };
 
 // ---- State ----
