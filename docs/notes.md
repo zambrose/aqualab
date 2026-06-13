@@ -209,3 +209,79 @@ primitive — fees are separate instructions composed around it.
 - `Controls._salt` value: we expose `buildOrder(maker, salt)` taking a `uint64`
   salt so callers vary pools deterministically.
 ```
+
+---
+
+## 9. Agent 2 discoveries — composed strategy (fee + decay + AMM)
+
+### 9.1 Fee & Decay are WRAPPER instructions (recursion via `ctx.runLoop()`)
+
+`Fee._flatFeeAmountInXD` and `Decay._decayXD` are **not** flat leaf steps. Each
+one mutates the swap registers and then calls `ctx.runLoop()`, which executes the
+rest of the program **from the current `nextPC` to the end** (`VM.sol` runLoop).
+When that inner loop returns, the wrapper post-processes, and the outer loop —
+already at program end — stops. Net effect: a wrapper runs everything after its
+own frame **exactly once**, nested. So the program byte order *is* the nesting:
+
+```
+[salt][decay][fee][swap]   ==>   salt;  Decay( Fee( Swap ) )
+```
+
+The AMM primitives (`_xycSwapXD`, `_xycConcentrateGrowLiquidity2D`) are **leaves**
+— they set the missing amount and return without recursing.
+
+**Ordering is forced, not stylistic.** Both Fee and Decay `require(amountIn == 0
+|| amountOut == 0)` — they must run before the swap has priced. The swap must be
+LAST/innermost; putting it earlier reverts
+(`FeeShouldBeAppliedBeforeSwapAmountsComputation` /
+`DecayShouldBeCalledBeforeSwapAmountsComputation`). Outermost→innermost we chose
+**Decay → Fee → Swap**: decay shapes the virtual reserves + records the realized
+offset; fee shrinks the curve's input; the curve prices last. `salt` is a pure
+no-op placed first (it doesn't recurse).
+
+### 9.2 Real opcode names + arg encodings used (all in `AquaOpcodes`)
+
+| Instruction | ArgsBuilder call | Arg bytes |
+|---|---|---|
+| `Controls._salt` | `ControlsArgsBuilder.buildSalt(uint64)` | 8 |
+| `Decay._decayXD` | `DecayArgsBuilder.build(uint16 period)` | 2 |
+| `Fee._flatFeeAmountInXD` | `FeeArgsBuilder.buildFlatFee(uint32 feeBps)` | 4 (1e9 = 100%) |
+| `XYCSwap._xycSwapXD` | — | 0 |
+| `XYCConcentrate._xycConcentrateGrowLiquidity2D` | `XYCConcentrateArgsBuilder.build2D(uint256 sqrtPmin, uint256 sqrtPmax)` | 64 |
+
+### 9.3 AMM primitive used: CONCENTRATED (primary, no fallback needed)
+
+`_xycConcentrateGrowLiquidity2D` ships + swaps fine through live Aqua. Gotcha:
+the sqrt-price band `P = tokenGt/tokenLt` is in **RAW token units**, so for
+WETH(18dp)/USDC(6dp) the implied `√P·1e18 ≈ 1.8e22`, NOT ~1e16. If the band's
+implied spot is inconsistent with the seeded reserves, the curve computes an
+`amountOut` larger than the maker can pay and the **revert surfaces inside
+`AQUA.pull`** (underflow), not in the curve math — confusing to debug. Derive the
+band from the seed reserves: `√P_spot = sqrt(balanceGt·1e36/balanceLt)`, then
+e.g. ±5%. `XYCConcentrateArgsBuilder.computeLiquidityAndPrice(bLt,bGt,√min,√max)`
+is the public helper to check the implied spot lands in-band.
+
+### 9.4 "Progressive fee" — NOT an opcode (confirmed §4/§8 caution)
+
+No single Aqua opcode does size-progressive fees and there's no amount-based
+`Controls` jump. We realize it as (a) `progressiveFeeBps()` size→bps tiering for
+per-strategy fee ladders, and (b) `_decayXD` (effective cost grows with
+size/frequency). Documented in `ComposedStrategyBuilder` NatSpec + README.
+
+### 9.5 For Agent 3 (trace exporter) — the composed instruction sequence
+
+A composed program decodes (against the §4 table) to this frame sequence:
+
+```
+salt(8B) | decay(2B) | flatFee(4B) | [xycSwap(0B) | OR | concentrate(64B)]
+```
+
+The **execution** is nested, so a flat PC-ordered step list is NOT the economic
+nesting. For the visualizer, the meaningful per-step deltas are: after `decay`,
+`ctx.swap.balanceIn/balanceOut` are the *virtual* (offset-adjusted) reserves;
+after `fee`, `ctx.swap.amountIn` is the *net* input the curve sees (the
+taker-defined input is restored after the inner runLoop returns); the AMM leaf
+sets `amountOut` (exact-in). `decayPeriod==0` and `feeBps==0` omit those frames
+entirely, so the trace exporter must decode whatever frames are actually present
+rather than assume all four. The builder is
+`src/ComposedStrategyBuilder.sol::buildComposedProgram(PoolParams)`.
