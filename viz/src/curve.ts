@@ -18,8 +18,10 @@ export interface CurveAnimState {
   targetSwapPointX: number;
   /** Animation progress [0,1] */
   progress: number;
-  /** Whether the animation is running */
+  /** Whether the swap-point translation animation is running */
   animating: boolean;
+  /** Monotonic time counter (ms) for idle pulse */
+  time: number;
 }
 
 /** Palette — dark theme */
@@ -46,6 +48,7 @@ export function createCurveAnimState(): CurveAnimState {
     targetSwapPointX: 0.5,
     progress: 1,
     animating: false,
+    time: 0,
   };
 }
 
@@ -68,7 +71,11 @@ function easeInOut(t: number): number {
  * Returns true if a redraw is needed.
  */
 export function tickAnimation(state: CurveAnimState, dt: number): boolean {
-  if (!state.animating) return false;
+  state.time += dt;
+  if (!state.animating) {
+    // Always redraw for the idle pulse effect on the swap dot
+    return true;
+  }
   state.progress = Math.min(1, state.progress + dt / 600); // 600 ms total
   state.swapPointX = state.progress >= 1
     ? state.targetSwapPointX
@@ -237,25 +244,35 @@ export function drawCurve(
   }
   ctx.stroke();
 
-  // ---- Swap point ----
+  // ---- Swap point (animated pulse) ----
   const swapT = animState.swapPointX;
   const [spx, spy] = curvePoint(swapT, k, plot, xMin, xMax, yMin, yMax);
 
-  // Glow
-  const grd = ctx.createRadialGradient(spx, spy, 0, spx, spy, 18);
-  grd.addColorStop(0, C.swapDotGlow);
+  // Pulsing outer ring
+  const pulse = (Math.sin(animState.time / 700) + 1) / 2; // 0..1
+  const ringRadius = 10 + pulse * 8;
+  const ringAlpha = 0.15 + pulse * 0.2;
+  const grd = ctx.createRadialGradient(spx, spy, 0, spx, spy, ringRadius + 4);
+  grd.addColorStop(0, `rgba(247, 129, 102, ${ringAlpha + 0.15})`);
   grd.addColorStop(1, 'transparent');
   ctx.fillStyle = grd;
   ctx.beginPath();
-  ctx.arc(spx, spy, 18, 0, Math.PI * 2);
+  ctx.arc(spx, spy, ringRadius + 4, 0, Math.PI * 2);
   ctx.fill();
 
-  // Dot
+  // Outer ring stroke
+  ctx.strokeStyle = `rgba(247, 129, 102, ${ringAlpha})`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(spx, spy, ringRadius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Inner dot
   ctx.fillStyle = C.swapDot;
   ctx.beginPath();
   ctx.arc(spx, spy, 5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = '#fff3';
+  ctx.strokeStyle = '#ffffffcc';
   ctx.lineWidth = 1;
   ctx.stroke();
 
