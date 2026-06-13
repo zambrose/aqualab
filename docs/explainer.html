@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AquaLab — How it works (a technical explainer)</title>
+<style>
+  :root {
+    --bg:#0d1117; --bg2:#161b22; --bg3:#21262d; --border:#30363d;
+    --text:#e6edf3; --dim:#8b949e; --blue:#388bfd; --purple:#8957e5;
+    --green:#56d364; --orange:#ffa657; --red:#f78166; --teal:#79c0ff;
+    --mono:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { scroll-behavior:smooth; }
+  body { background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.65;
+    -webkit-font-smoothing:antialiased; }
+  .layout { max-width:1180px; margin:0 auto; display:grid; grid-template-columns:240px 1fr; gap:0; }
+  @media (max-width:900px){ .layout{grid-template-columns:1fr;} aside{display:none;} }
+
+  aside { position:sticky; top:0; align-self:start; height:100vh; overflow:auto;
+    border-right:1px solid var(--border); padding:1.6rem 1.2rem; }
+  aside .brand { font-weight:800; font-size:1.1rem; margin-bottom:.3rem; }
+  aside .brand .a{color:var(--blue);}
+  aside .sub { color:var(--dim); font-size:.8rem; margin-bottom:1.4rem; }
+  aside nav a { display:block; color:var(--dim); font-size:.9rem; padding:.32rem 0; }
+  aside nav a:hover { color:var(--text); }
+  aside nav .grp { color:var(--teal); font-family:var(--mono); font-size:.72rem; text-transform:uppercase;
+    letter-spacing:.1em; margin:1.1rem 0 .3rem; }
+
+  main { padding:2.4rem 2.6rem 5rem; min-width:0; }
+  a { color:var(--teal); text-decoration:none; } a:hover{text-decoration:underline;}
+  code,.mono { font-family:var(--mono); font-size:.92em; }
+  :not(pre) > code { background:var(--bg2); border:1px solid var(--border); padding:.05rem .35rem; border-radius:4px; color:var(--teal); }
+  strong { color:#fff; }
+  p { margin:.9rem 0; max-width:72ch; }
+  h1 { font-size:2.4rem; letter-spacing:-.02em; line-height:1.1; }
+  .intro { color:var(--dim); font-size:1.15rem; margin:1rem 0 0; max-width:70ch; }
+  h2 { font-size:1.6rem; margin:2.8rem 0 .3rem; padding-top:1rem; border-top:1px solid var(--border); letter-spacing:-.01em; }
+  h2 .n { color:var(--blue); font-family:var(--mono); font-size:1.1rem; margin-right:.5rem; }
+  h3 { font-size:1.12rem; margin:1.6rem 0 .2rem; color:var(--text); }
+  ul,ol { margin:.7rem 0 .7rem 1.3rem; } li { margin:.35rem 0; max-width:70ch; }
+
+  pre { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:1rem 1.2rem;
+    font-family:var(--mono); font-size:.88rem; line-height:1.7; overflow:auto; margin:1rem 0; max-width:74ch; }
+  pre .c{color:var(--dim);} pre .g{color:var(--green);} pre .o{color:var(--orange);}
+  pre .b{color:var(--teal);} pre .p{color:var(--purple);} pre .k{color:var(--red);}
+
+  .note { background:#1f6feb12; border:1px solid var(--blue); border-left:4px solid var(--blue);
+    border-radius:8px; padding:.9rem 1.1rem; margin:1.2rem 0; max-width:72ch; }
+  .note.key { background:#56d36412; border-color:var(--green); border-left-color:var(--green); }
+  .note.warn { background:#ffa65712; border-color:var(--orange); border-left-color:var(--orange); }
+  .note strong { color:#fff; }
+  .note .lbl { font-family:var(--mono); font-size:.72rem; text-transform:uppercase; letter-spacing:.1em;
+    color:var(--teal); display:block; margin-bottom:.3rem; }
+  .note.key .lbl{color:var(--green);} .note.warn .lbl{color:var(--orange);}
+
+  table { width:100%; border-collapse:collapse; font-size:.92rem; margin:1rem 0; max-width:74ch; }
+  th,td { text-align:left; padding:.55rem .75rem; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--dim); font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; }
+  td.mono,td .reg { font-family:var(--mono); color:var(--teal); }
+
+  .res { display:grid; grid-template-columns:1fr; gap:.7rem; margin:1rem 0; max-width:74ch; }
+  .res a.card { display:block; background:var(--bg2); border:1px solid var(--border); border-radius:9px;
+    padding:.9rem 1.1rem; }
+  .res a.card:hover { border-color:var(--blue); text-decoration:none; }
+  .res .t { color:var(--text); font-weight:650; }
+  .res .t .ext { color:var(--dim); font-weight:400; font-size:.82rem; }
+  .res .d { color:var(--dim); font-size:.9rem; margin-top:.2rem; }
+
+  .crumbs { display:flex; gap:.6rem; font-size:.85rem; color:var(--dim); margin-bottom:1.4rem; }
+  .crumbs a{color:var(--teal);}
+  .pill { display:inline-block; font-family:var(--mono); font-size:.75rem; padding:.15rem .55rem; border-radius:999px;
+    border:1px solid var(--border); color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <div class="brand">Aqua<span class="a">Lab</span></div>
+    <div class="sub">How it works — explainer</div>
+    <nav>
+      <div class="grp">Foundations</div>
+      <a href="#why-amm">1 · Why AMMs exist</a>
+      <a href="#cpmm">2 · Constant product &amp; slippage</a>
+      <a href="#concentrated">3 · Concentrated liquidity</a>
+      <a href="#fees">4 · Fees &amp; LP economics</a>
+      <a href="#mev">5 · MEV, decay &amp; virtual balances</a>
+      <div class="grp">The 1inch stack</div>
+      <a href="#swapvm">6 · SwapVM: an AMM bytecode VM</a>
+      <a href="#aqua">7 · Aqua: shared liquidity</a>
+      <a href="#aqualab">8 · How AquaLab composes it</a>
+      <div class="grp">Go deeper</div>
+      <a href="#resources">Resources to get up to speed</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="crumbs"><a href="judges.html">← Project overview</a><span>·</span><span class="pill">~12 min read</span></div>
+    <h1>How AquaLab works</h1>
+    <p class="intro">Written for engineers who are comfortable with code but new to AMMs and DeFi. We build
+      from first principles — what an automated market maker is, the curve math, fees and MEV — then show how
+      1inch's SwapVM turns all of that into a <em>composable bytecode program</em>, which is what AquaLab demonstrates
+      and visualizes. Every section is short; worked numbers are illustrative unless marked as demo values.</p>
+
+    <h2 id="why-amm"><span class="n">1</span>Why AMMs exist</h2>
+    <p>A traditional exchange runs an <strong>order book</strong>: buyers and sellers post limit orders and a matching
+      engine pairs them. That needs active market makers constantly quoting, and it's expensive to run fully on-chain
+      (every order placement/cancel is a transaction).</p>
+    <p>An <strong>Automated Market Maker (AMM)</strong> replaces the order book with a <strong>formula</strong> and a
+      <strong>pool of reserves</strong>. Liquidity providers (LPs) deposit two tokens; a fixed function decides the price
+      for any trade against those reserves. No counterparty needs to be online — you trade against the math. This is what
+      made on-chain spot trading practical (Uniswap, 2018).</p>
+    <div class="note"><span class="lbl">Mental model</span>
+      <p>An AMM is a vending machine for token swaps: it always quotes a price from its current inventory, and each
+        purchase shifts the next price. The "strategy" is the pricing function.</p></div>
+
+    <h2 id="cpmm"><span class="n">2</span>Constant product &amp; slippage</h2>
+    <p>The canonical AMM is the <strong>constant-product market maker</strong>: keep the product of the two reserves
+      constant across a trade.</p>
+    <pre><span class="c">x · y = k        (x = reserve of token A, y = reserve of token B)</span>
+<span class="c">spot price of A in B = y / x</span></pre>
+    <p>To swap in <code>Δx</code> of token A, you solve for the output <code>Δy</code> that keeps <code>k</code> fixed:</p>
+    <pre><span class="c">// pool: 1000 WETH and 3,000,000 USDC  →  k = 3,000,000,000, spot = 3000 USDC/WETH</span>
+add 1 WETH      → x' = 1001
+y' = k / x'     = 3,000,000,000 / 1001 = <span class="o">2,997,002.998</span> USDC
+amountOut       = y − y' = 3,000,000 − 2,997,002.998 = <span class="g">2,997.0 USDC</span></pre>
+    <p>You paid 1 WETH and got ~2997 USDC, not the full 3000. The missing ~3 USDC is <strong>slippage</strong> (a.k.a.
+      price impact): the bigger your trade relative to the pool, the worse your average price, because the curve moves as
+      you traverse it. This is a feature — it's what keeps the pool from being drained and what arbitrageurs use to keep
+      the price in line with the wider market.</p>
+    <div class="note key"><span class="lbl">The invariant that matters</span>
+      <p>A correct constant-product swap never lets <code>k</code> <em>decrease</em> — rounding always favors the pool
+        (the maker). AquaLab fuzz-tests exactly this: "k is non-decreasing across an exact-in swap."</p></div>
+
+    <h2 id="concentrated"><span class="n">3</span>Concentrated liquidity</h2>
+    <p>Plain <code>x·y=k</code> spreads liquidity across <em>all</em> prices from 0 to ∞ — but almost all trading happens
+      near the current price, so most of that liquidity sits idle. <strong>Concentrated liquidity</strong> (Uniswap v3's
+      big idea) lets LPs put their capital into a chosen <strong>price band</strong> <code>[P_min, P_max]</code>. Inside
+      the band the pool behaves like a much larger constant-product pool, so trades get a better price for the same real
+      capital.</p>
+    <p>Mechanically, it works via <strong>virtual reserves</strong>: from the real balances and the band, you compute a
+      liquidity depth <code>L</code> and price as if the reserves were larger:</p>
+    <pre><span class="c">x_virtual = x_real + L / √P_max
+y_virtual = y_real + L · √P_min
+amountOut = Δin · y_virtual / (x_virtual + Δin)</span></pre>
+    <div class="note key"><span class="lbl">Demo value</span>
+      <p>In AquaLab's fork test, the concentrated pool returns <strong>2996.67 USDC</strong> for the same trade where a
+        plain <code>x·y=k</code> pool returns <strong>2961.47</strong> — the band genuinely deepens the book.</p></div>
+
+    <h2 id="fees"><span class="n">4</span>Fees &amp; LP economics</h2>
+    <p>Why would anyone provide liquidity? <strong>Trading fees.</strong> Each swap pays a small fee (e.g. 0.30%) that
+      accrues to LPs. In SwapVM's flat-fee instruction, the fee is taken off the <em>input</em> before the curve prices
+      it: the taker pays the full input, the curve only credits output for the post-fee amount, and the difference stays
+      in the pool for the maker.</p>
+    <pre><span class="c">netIn = Δin − ⌈Δin · feeBps / 1e9⌉     (rounding up favors the maker)
+amountOut = price(netIn)                <span class="c">// curve sees the smaller input</span></pre>
+    <p>Fees are also the LP's compensation for <strong>impermanent loss</strong> — the opportunity cost of holding a
+      volatile pair in a pool versus just holding the tokens. (Out of scope here, but it's the other half of LP returns;
+      see the resources.)</p>
+
+    <h2 id="mev"><span class="n">5</span>MEV, decay &amp; virtual balances</h2>
+    <p><strong>MEV (Maximal Extractable Value)</strong> is profit a block producer — or anyone who can order transactions —
+      extracts by inserting/reordering trades. The classic attack on an AMM is the <strong>sandwich</strong>: a bot sees
+      your pending swap, buys ahead of you (pushing the price up), lets your trade execute at the worse price, then sells
+      right after for a profit — paid for entirely by your slippage.</p>
+    <p>1inch's <strong>Mooniswap</strong> pioneered a defense using <strong>virtual balances</strong> that <strong>decay
+      over time</strong>. After a trade, the pool doesn't instantly show the new price to the next trade; instead it keeps
+      a decaying "offset" so the price recovers gradually over a window. A sandwich's second leg has to fight that
+      lingering offset, which erodes the attacker's edge and redirects slippage value back to LPs.</p>
+    <pre><span class="c">offset(t) = offset₀ · (expiry − t) / period      <span class="c">// linear decay to zero</span></span>
+<span class="c">while it persists, it virtually shrinks balanceOut / grows balanceIn</span></pre>
+    <div class="note key"><span class="lbl">Demo value</span>
+      <p>AquaLab's third trace is a follow-up swap arriving while a prior trade's offset is two-thirds un-decayed
+        (1200s into a 3600s window). You can watch the decay instruction shift the virtual reserves before the curve
+        prices the trade — visible, on-screen MEV protection.</p></div>
+
+    <h2 id="swapvm"><span class="n">6</span>SwapVM: an AMM as a bytecode program</h2>
+    <p>Here's the leap that makes 1inch's design different. Instead of each AMM being a hardcoded contract, <strong>SwapVM
+      is a tiny virtual machine</strong>, and a "strategy" is a <strong>program</strong> of instructions it executes. The
+      pricing logic above — constant product, concentration, fee, decay — are <strong>opcodes</strong> you compose.</p>
+    <h3>A program is a byte stream of triples</h3>
+    <pre><span class="c">[ opcode ][ args_length ][ args ]   ·   [ opcode ][ args_length ][ args ]   ·   …</span>
+
+<span class="c">AquaLab's composed program:</span>
+  <span class="p">_salt</span>(8B)  →  <span class="b">_decayXD</span>(2B)  →  <span class="o">_flatFeeAmountInXD</span>(4B)  →  <span class="g">_xycConcentrateGrowLiquidity2D</span>(64B)</pre>
+    <h3>Five registers, mutated by instructions</h3>
+    <p>The VM carries a small register file — the <strong>SwapRegisters</strong> — that instructions read and write. The
+      taker specifies one amount; the VM computes the other; instructions mutate the registers along the way:</p>
+    <table>
+      <tr><th>Register</th><th>Meaning</th></tr>
+      <tr><td class="mono">balanceIn</td><td>(virtual) reserve of the token being sold</td></tr>
+      <tr><td class="mono">balanceOut</td><td>(virtual) reserve of the token being bought</td></tr>
+      <tr><td class="mono">amountIn</td><td>amount of input token</td></tr>
+      <tr><td class="mono">amountOut</td><td>amount of output token</td></tr>
+      <tr><td class="mono">amountNetPulled</td><td>net pulled (used by protocol-fee accounting)</td></tr>
+    </table>
+    <p>Crucially, instructions only <em>compute amounts</em>. The actual token transfer — the maker↔taker
+      <strong>settlement</strong> — happens once, in the VM, <em>after</em> the instruction loop finishes. This is why
+      ordering is safe to reason about: the loop is pure arithmetic on registers; money moves at the end.</p>
+    <div class="note"><span class="lbl">Wrappers vs leaves</span>
+      <p><code>Fee</code> and <code>Decay</code> are <strong>wrapper</strong> instructions: each adjusts the registers, calls
+        <code>runLoop()</code> to execute the rest of the program, then post-processes on the way back out. The AMM is a
+        <strong>leaf</strong> that sets the missing amount and returns. So byte order encodes nesting:
+        <code class="mono">Decay( Fee( Swap ) )</code>. Both wrappers assert the swap hasn't priced yet, so the curve is
+        forced innermost — putting it first reverts.</p></div>
+    <h3>quote() must equal swap()</h3>
+    <p>SwapVM exposes <code>quote()</code> (a read-only preview) and <code>swap()</code> (execution). With identical taker
+      input they must return identical <code>(amountIn, amountOut)</code> — otherwise a preview would lie. AquaLab asserts
+      this on the Aqua path and surfaces a <code>quote == swap ✓</code> badge in the visualizer.</p>
+
+    <h2 id="aqua"><span class="n">7</span>Aqua: shared liquidity</h2>
+    <p>A SwapVM strategy needs reserves to price against. There are two ways to supply them, running the <em>same</em>
+      strategy bytecode:</p>
+    <ul>
+      <li><strong>Dynamic balances</strong> — the maker signs the strategy off-chain (EIP-712); reserves are internal to
+        SwapVM. Good for isolated, single-maker strategies.</li>
+      <li><strong>Aqua</strong> — the maker <code>ship</code>s liquidity into the shared <strong>Aqua</strong> contract,
+        sets a flag (<code>useAquaInsteadOfSignature</code>), and omits the balance instruction (Aqua manages balances).
+        Aqua is a non-custodial shared liquidity layer: many strategies draw on pooled, on-chain liquidity.</li>
+    </ul>
+    <p>The bounty is "Build an Aqua App," so AquaLab demonstrates the <strong>Aqua path</strong>: it <code>ship</code>s
+      into the live Aqua deployment and lets a taker swap through it, with real token transfers on a mainnet fork.</p>
+
+    <h2 id="aqualab"><span class="n">8</span>How AquaLab composes it</h2>
+    <p>Putting the pieces together, AquaLab:</p>
+    <ol>
+      <li><strong>Builds a composed program</strong> — <code>salt → decay → fee → AMM</code> — with the concentrated-liquidity
+        opcode as the primary curve and constant product as a fallback.</li>
+      <li><strong>Ships it into live Aqua</strong> on a mainnet fork and runs a real taker swap, asserting the transfers,
+        <code>quote()==swap()</code>, and curve invariants (including the upstream 1inch <code>CoreInvariants</code>).</li>
+      <li><strong>Exports the execution as a trace</strong> and <strong>renders it</strong> in a web debugger: the
+        instruction pipeline, the five SwapRegisters mutating per step, the balance deltas, and the animated price curve.</li>
+    </ol>
+    <div class="note warn"><span class="lbl">A real-world wrinkle we surfaced</span>
+      <p>The SwapVM router deployed on mainnet is a <em>newer</em> build than the latest published source tag, with extra
+        opcodes and a shifted opcode table — so program bytes built against the pinned source can't execute on it. AquaLab
+        handles this honestly: it executes on a self-deployed engine from pinned source (for reproducibility) while using
+        the real live Aqua liquidity, and a test proves on-chain that the canonical router is live and points at the same
+        Aqua. Engaging with that dev-preview reality is part of the point.</p></div>
+
+    <h2 id="resources">Resources to get up to speed</h2>
+    <p>Curated, in rough reading order. Each is a primary source or a canonical explainer.</p>
+
+    <h3>AMM fundamentals</h3>
+    <div class="res">
+      <a class="card" href="https://uniswap.org/whitepaper.pdf"><span class="t">Uniswap v2 Whitepaper <span class="ext">↗ uniswap.org (PDF)</span></span><span class="d">The constant-product AMM, formalized — the foundation everything here builds on.</span></a>
+      <a class="card" href="https://docs.uniswap.org/contracts/v2/concepts/protocol-overview/how-uniswap-works"><span class="t">How Uniswap Works <span class="ext">↗ docs.uniswap.org</span></span><span class="d">Plain-language walkthrough of pools, pricing, and slippage.</span></a>
+      <a class="card" href="https://uniswap.org/whitepaper-v3.pdf"><span class="t">Uniswap v3 Whitepaper <span class="ext">↗ uniswap.org (PDF)</span></span><span class="d">Concentrated liquidity and virtual reserves — section 3 covers the band/√price math.</span></a>
+    </div>
+
+    <h3>1inch AMM design &amp; MEV protection</h3>
+    <div class="res">
+      <a class="card" href="https://blog.1inch.com/1inch-revolutionizes-automated-market-maker-amm-segment-with-mooniswap/"><span class="t">Mooniswap: virtual balances &amp; slippage capture <span class="ext">↗ blog.1inch.com</span></span><span class="d">The origin of the decay/virtual-balance idea AquaLab's <code>_decayXD</code> opcode descends from.</span></a>
+      <a class="card" href="https://www.youtube.com/watch?v=TwkgScs9ACE"><span class="t">"The Art of AMM" — Anton Bukov (1inch) <span class="ext">↗ YouTube</span></span><span class="d">1inch co-founder's workshop on the composable-liquidity approach behind SwapVM and Aqua.</span></a>
+      <a class="card" href="https://ethereum.org/en/developers/docs/mev/"><span class="t">MEV, explained <span class="ext">↗ ethereum.org</span></span><span class="d">What MEV and sandwich attacks are, and why AMMs need protection.</span></a>
+      <a class="card" href="https://docs.flashbots.net/"><span class="t">Flashbots docs <span class="ext">↗ docs.flashbots.net</span></span><span class="d">The canonical deep-dive on MEV mechanics and mitigation.</span></a>
+    </div>
+
+    <h3>The 1inch SwapVM / Aqua stack</h3>
+    <div class="res">
+      <a class="card" href="https://github.com/1inch/swap-vm"><span class="t">1inch/swap-vm <span class="ext">↗ GitHub</span></span><span class="d">The VM, routers, and instruction library (XYCSwap, XYCConcentrate, Fee, Decay…). Read the README + SwapVM whitepaper.</span></a>
+      <a class="card" href="https://github.com/1inch/aqua"><span class="t">1inch/aqua <span class="ext">↗ GitHub</span></span><span class="d">The shared liquidity protocol — <code>ship</code> / <code>dock</code> / <code>safeBalances</code>.</span></a>
+      <a class="card" href="https://github.com/1inch/swap-vm-template"><span class="t">1inch/swap-vm-template <span class="ext">↗ GitHub</span></span><span class="d">Starter template for building custom SwapVM + Aqua strategies.</span></a>
+    </div>
+
+    <h3>Tooling</h3>
+    <div class="res">
+      <a class="card" href="https://book.getfoundry.sh/"><span class="t">The Foundry Book <span class="ext">↗ book.getfoundry.sh</span></span><span class="d">Forge/anvil/cast — including mainnet forking, which is how AquaLab tests against live contracts.</span></a>
+    </div>
+
+    <p class="intro" style="margin-top:2.5rem; font-size:1rem;">Ready to see it run? Head back to the
+      <a href="judges.html">project overview</a> for the two-minute demo, or open the
+      <a href="../slides/index.html">slide deck</a>.</p>
+  </main>
+</div>
+</body>
+</html>

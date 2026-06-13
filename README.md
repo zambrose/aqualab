@@ -16,6 +16,18 @@ Three parts, all working end-to-end on a mainnet fork:
    — the instruction pipeline, balance deltas, and AMM curve state — step by step
    ([visualizer](#trace-visualizer)).
 
+### Presentation & docs
+
+Three standalone, self-contained artifacts (open directly in a browser, no build):
+
+- **[`docs/judges.html`](docs/judges.html)** — judge-facing project overview: bounty
+  fit, the pipeline, the proof, and a two-minute run guide.
+- **[`docs/explainer.html`](docs/explainer.html)** — a technical explainer for engineers
+  new to AMMs: constant product, concentrated liquidity, fees, MEV/decay, and the
+  SwapVM bytecode model, with curated resources to get up to speed.
+- **[`slides/index.html`](slides/index.html)** — the 3-minute demo slide deck (press
+  `S` for speaker notes with live commands).
+
 ## What works today
 
 A maker ships a stock **XYCSwap** (constant-product, `x*y=k`) SwapVM strategy into
