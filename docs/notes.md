@@ -383,3 +383,115 @@ Reconciled from the real `AquaOpcodes` table (§4 of these notes):
 Files updated: `viz/fixtures/trace.schema.json`, `viz/src/types.ts`, `viz/src/stepPanel.ts`.
 The `BALANCE_SETUP` framing step was replaced with the real `_salt` instruction (no synthetic step needed).
 `opcodeClass()` substring matching in stepPanel.ts still correctly routes all real opcode names to their CSS classes.
+
+---
+
+## 11. Correction pass (contracts) — RESOLVED via "hybrid + on-chain proof"
+
+A correction pass shipped four fix groups (canonical-router linkage, quote==swap
+round-trip, CoreInvariants inheritance, trace `registers`/`quoteEqualsSwap`). An
+earlier pass flagged a hard discrepancy on the canonical router (§11.1/§11.2 below,
+kept as ground truth); the orchestrator + user chose the **hybrid** resolution
+(§11.3). The diagnostic facts are retained because they are still true and explain
+*why* the hybrid is the honest choice.
+
+### 11.1 The canonical deployed router is NOT byte-identical to vendored swap-vm 0.0.6
+
+The orchestrator's premise was: the canonical SwapVM router deployed at
+`0x8fDD04Dbf6111437B44bbca99C28882434e0958f` runs the production `AquaOpcodes`
+table, *byte-identical* to the `AquaOpcodesDebug` table our builders encode against,
+so the same program bytes execute unchanged. **This is false against the deployed
+bytecode at fork block 25,300,000.** Measured facts:
+
+- `AQUA()` on the deployed router = `0x499943…D936d31` ✓ (the same Aqua we ship into).
+- Deployed router runtime code size = **22,640 bytes**.
+- Our vendored `AquaSwapVMRouter` (swap-vm 0.0.6) compiles to **18,142 bytes**.
+  → 4,498-byte difference; different bytecode, hence a different opcode table.
+- The fresh-deploy router (vendored) executes our programs fine (the 13-test baseline
+  passes). The deployed router *rejects the identical program bytes*:
+  - Happy-path `[xycSwap][salt]` (bytes `0x110014080000000000000001`) →
+    `panic 0x11 (arithmetic underflow)` inside the instruction at byte 17.
+  - USDC→WETH same program → `DecayShouldBeCalledBeforeSwapAmountsComputation(10, 3e9)`.
+  - Composed program's curve byte → custom error `0xec286c06`.
+
+### 11.2 Probed opcode map of the DEPLOYED router (via per-byte ship+swap revert selectors)
+
+Shipping a single-frame program at each opcode byte and reading the revert selector
+maps the deployed router's table — and proves it is a **newer, shifted** version:
+
+| byte | deployed revert selector | instruction family (decoded) |
+|---|---|---|
+| 14–16 | `ControlsMissingTokenArg` (`0x6cac7aec`) | Controls.* token-jumps |
+| 17 | `panic 0x11` underflow (`0x4e487b71`) | an AMM/swap leaf |
+| 18 | `0xfd7d16b0` | XYC-family |
+| 19 | `0xec286c06` | XYCConcentrate-family |
+| 20 | `DecayMissingPeriodArg` (`0x9d584cd8`) | **Decay._decayXD** |
+| 21 | `MakerTraitsZeroAmountInNotAllowed` (`0x2087efa1`) | salt/fall-through |
+| 22–23 | `FeeMissingFeeBPS` (`0xa73c6824`) | **Fee.*** |
+| 24 | `ProgressiveFeeMissingFeeBPS` (`0x4f5033b3`) | **ProgressiveFee** |
+
+The decisive tell is byte 24 = `ProgressiveFeeMissingFeeBPS`: a `_progressiveFeeInXD`
+opcode that does **not exist anywhere in vendored swap-vm 0.0.6** (`AquaOpcodes` 0.0.6
+stops at `Extruction` and never exposes progressive fee — see §4 CAUTION / §8 / §9.4).
+So the deployed router is a LATER build with progressive-fee added and the opcode
+indices shifted. Our builder emits XYCSwap at byte 17, which on the deployed router
+is a different leaf — hence the underflow.
+
+> Side note this also resolves the long-standing §8 open question: `_progressiveFeeInXD`
+> IS reachable on the *deployed* Aqua router (byte 24), just not in our vendored 0.0.6
+> sources. A future pass that re-vendors the matching router version could use it
+> directly instead of the tiering/decay stand-ins.
+
+### 11.3 The chosen resolution: HYBRID execution + on-chain linkage proof
+
+The orchestrator + user picked **option 3 (hybrid)**: keep executing swaps on the
+fresh-deployed 0.0.6 `AquaSwapVMRouter` (the pinned, reproducible stateless engine)
+and ship liquidity into the SAME live Aqua singleton the canonical router uses, then
+ADD a read-only on-chain test that proves the linkage honestly. Why hybrid (not
+re-vendoring): 0.0.6 is the only published tag and `main`'s AquaOpcodes table is
+byte-identical to it — the deployed build is unpublished, so there is no obtainable
+source whose program bytes execute on the deployed router. Re-vendoring would mean
+guessing/reconstructing unpublished bytecode; the hybrid keeps everything pinned and
+reproducible while still anchoring on the real live deployment.
+
+**What is shared vs self-deployed.** The *liquidity layer* is the real canonical Aqua
+(`0x499943E7…6d31`) — the exact singleton the deployed router's `AQUA()` returns — so
+our `ship`/`safeBalances`/`dock` already touch the live deployment. Only the
+*stateless execution engine* (the SwapVM router that decodes program bytes and prices
+the trade) is self-deployed from pinned 0.0.6.
+
+**On-chain proof — `test/CanonicalRouterLinkage.t.sol`** asserts, on the fork at block
+25,300,000:
+1. `extcodesize(0x8fDD04…0958f) > 0` — the canonical router is real (measured 22,640).
+2. `IRouterAqua(canonical).AQUA() == 0x499943E7…6d31` — the deployed router uses the
+   SAME Aqua we ship into (the load-bearing linkage).
+3. A fresh 0.0.6 `AquaSwapVMRouter` self-deploy has codesize **18,142** ≠ the deployed
+   **22,640** — proving they are different builds (the dev-preview version skew) — and
+   that fresh router's `AQUA()` also equals `0x499943E7…6d31`, so the ONLY difference
+   between the two execution surfaces is the build, not the liquidity layer.
+
+This captures the "uses the live deployment" narrative without running unverifiable
+re-encoded bytes through the deployed router.
+
+### 11.4 With A resolved, B/C/D proceed on the hybrid surface
+
+- **B (quote==swap round-trip):** the happy-path WETH→USDC fork test and a composed
+  fork test now call `router.quote(...)` before the real `swap(...)` with identical
+  taker data and `assertEq` the `(amountIn, amountOut)` pair. `AquaLabTaker` got a
+  `quote()` passthrough. Runs on the fresh-deploy router + live Aqua.
+- **C (CoreInvariants):** `test/invariants/CoreInvariants.t.sol` +
+  `ExactInOutSymmetry.t.sol` vendored from 0.0.6 into `lib/swap-vm/test/invariants/`;
+  `test/ComposedInvariants.t.sol` inherits `CoreInvariants` and runs
+  `assertAllInvariantsWithConfig(...)` against the composed strategy on the
+  fresh-deploy router + live Aqua. **Additivity is configured OFF**
+  (`skipAdditivity = true`) with justification: under `_decayXD` the price is
+  path-dependent by design — a single swap(A+B) and a split swap(A)+swap(B) leave
+  different decay offsets, so additivity (single ≥ split) is not an invariant for a
+  decay-protected pool. Every other invariant (symmetry, quote/swap consistency,
+  monotonicity, rounding-favors-maker, balance-sufficiency) runs and passes.
+- **D (trace `registers` + `metadata.quoteEqualsSwap`):** the schema + TraceExporter
+  now emit the 5 `SwapRegisters` after each instruction and a top-level
+  `metadata.quoteEqualsSwap` boolean (from a real quote==swap check inside the
+  exporter). All three fixtures regenerated via the §10.3 command and validate.
+
+No tolerances were loosened and no pass was faked. Baseline + new tests all green.

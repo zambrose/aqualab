@@ -23,7 +23,8 @@
         "swapAmountIn",
         "swapAmountOut",
         "swapDirection",
-        "totalFeesBps"
+        "totalFeesBps",
+        "quoteEqualsSwap"
       ],
       "additionalProperties": false,
       "properties": {
@@ -70,6 +71,10 @@
           "minimum": 0,
           "description": "Effective total fee in basis points (out of 10000, i.e. 30 = 0.30%) applied across all steps."
         },
+        "quoteEqualsSwap": {
+          "type": "boolean",
+          "description": "True when the router's static quote() returned exactly the (amountIn, amountOut) the real swap() produced for this trade — i.e. the trace's pricing is quote/swap-consistent."
+        },
         "label": {
           "type": "string",
           "description": "Optional human-readable label for the trace (shown in UI dropdown)."
@@ -115,6 +120,7 @@
         "opcode",
         "description",
         "params",
+        "registers",
         "balancesBefore",
         "balancesAfter",
         "curveState"
@@ -154,6 +160,7 @@
             { "$ref": "#/$defs/paramsGeneric" }
           ]
         },
+        "registers": { "$ref": "#/$defs/swapRegisters" },
         "balancesBefore": { "$ref": "#/$defs/balanceSnapshot" },
         "balancesAfter": { "$ref": "#/$defs/balanceSnapshot" },
         "curveState": { "$ref": "#/$defs/curveState" },
@@ -267,6 +274,19 @@
           "description": "Reference to tokenA or tokenB defined in metadata."
         },
         "amount": { "$ref": "#/$defs/bigint" }
+      }
+    },
+    "swapRegisters": {
+      "type": "object",
+      "required": ["balanceIn", "balanceOut", "amountIn", "amountOut", "amountNetPulled"],
+      "additionalProperties": false,
+      "description": "The 5 SwapVM `SwapRegisters` (Context.swap, see swap-vm VM.sol) AS OF AFTER this instruction executed. base-10 strings (uint256-safe). balanceIn/balanceOut are the virtual reserves the VM is pricing against; amountIn/amountOut are the in/out registers; amountNetPulled is the net input the maker side receives.",
+      "properties": {
+        "balanceIn": { "$ref": "#/$defs/bigint", "description": "ctx.swap.balanceIn after this step (virtual reserve of tokenIn)." },
+        "balanceOut": { "$ref": "#/$defs/bigint", "description": "ctx.swap.balanceOut after this step (virtual reserve of tokenOut)." },
+        "amountIn": { "$ref": "#/$defs/bigint", "description": "ctx.swap.amountIn after this step." },
+        "amountOut": { "$ref": "#/$defs/bigint", "description": "ctx.swap.amountOut after this step." },
+        "amountNetPulled": { "$ref": "#/$defs/bigint", "description": "ctx.swap.amountNetPulled after this step (net input pulled to the maker)." }
       }
     },
     "balanceSnapshot": {

@@ -122,7 +122,11 @@ contract TraceExporter is Test {
         uint256 makerWethBefore = IERC20(WETH).balanceOf(maker);
         uint256 makerUsdcBefore = IERC20(USDC).balanceOf(maker);
 
-        (, uint256 realOut) = taker.swap(order, WETH, USDC, amountIn, _takerData());
+        // quote == swap consistency: preview with identical taker data, then swap.
+        (uint256 quoteIn, uint256 quoteOut) = taker.quote(order, WETH, USDC, amountIn, _takerData());
+        (uint256 realIn, uint256 realOut) = taker.swap(order, WETH, USDC, amountIn, _takerData());
+        bool quoteEqualsSwap = (quoteIn == realIn && quoteOut == realOut);
+        assertTrue(quoteEqualsSwap, "SMALL: quote must equal swap");
 
         uint256 takerWethAfter = IERC20(WETH).balanceOf(address(taker));
         uint256 takerUsdcAfter = IERC20(USDC).balanceOf(address(taker));
@@ -196,6 +200,7 @@ contract TraceExporter is Test {
             FORK_BLOCK,
             amountIn,
             realOut,
+            quoteEqualsSwap,
             _buildSmallSwapSteps(
                 amountIn,
                 realOut,
@@ -246,7 +251,11 @@ contract TraceExporter is Test {
         uint256 makerWethBefore = IERC20(WETH).balanceOf(maker);
         uint256 makerUsdcBefore = IERC20(USDC).balanceOf(maker);
 
-        (, uint256 realOut) = taker.swap(order, WETH, USDC, amountIn, _takerData());
+        // quote == swap consistency: preview with identical taker data, then swap.
+        (uint256 quoteIn, uint256 quoteOut) = taker.quote(order, WETH, USDC, amountIn, _takerData());
+        (uint256 realIn, uint256 realOut) = taker.swap(order, WETH, USDC, amountIn, _takerData());
+        bool quoteEqualsSwap = (quoteIn == realIn && quoteOut == realOut);
+        assertTrue(quoteEqualsSwap, "LARGE: quote must equal swap");
 
         uint256 takerWethAfter = IERC20(WETH).balanceOf(address(taker));
         uint256 takerUsdcAfter = IERC20(USDC).balanceOf(address(taker));
@@ -320,6 +329,7 @@ contract TraceExporter is Test {
             FORK_BLOCK,
             amountIn,
             realOut,
+            quoteEqualsSwap,
             _buildLargeSwapSteps(
                 amountIn,
                 realOut,
@@ -446,7 +456,11 @@ contract TraceExporter is Test {
         uint256 makerWethBefore2 = IERC20(WETH).balanceOf(maker);
         uint256 makerUsdcBefore2 = IERC20(USDC).balanceOf(maker);
 
-        (, uint256 realOut2) = taker.swap(order, USDC, WETH, amountIn2, _takerData());
+        // quote == swap consistency for the decay-affected reverse swap.
+        (uint256 quoteIn2, uint256 quoteOut2) = taker.quote(order, USDC, WETH, amountIn2, _takerData());
+        (uint256 realIn2, uint256 realOut2) = taker.swap(order, USDC, WETH, amountIn2, _takerData());
+        bool quoteEqualsSwap2 = (quoteIn2 == realIn2 && quoteOut2 == realOut2);
+        assertTrue(quoteEqualsSwap2, "TWO-SWAP: quote must equal swap");
 
         uint256 takerWethAfter2 = IERC20(WETH).balanceOf(address(taker));
         uint256 takerUsdcAfter2 = IERC20(USDC).balanceOf(address(taker));
@@ -488,6 +502,7 @@ contract TraceExporter is Test {
             FORK_BLOCK,
             amountIn2,
             realOut2,
+            quoteEqualsSwap2,
             _buildTwoSwapDecaySteps(
                 amountIn2,
                 realOut2,
@@ -586,6 +601,8 @@ contract TraceExporter is Test {
             0, "_salt",
             string.concat("Uniqueness salt: pure no-op. Pool uses salt=903 to distinguish from other pools."),
             string.concat('{"type":"_salt","salt":"903"}'),
+            // registers after salt (USDC->WETH): in=USDC reserve, out=WETH reserve
+            _registers(poolUsdcMid, poolWethMid, amountIn2, 0, 0),
             _balSnap(
                 _uint(makerWethBefore2), _uint(makerUsdcBefore2),
                 _uint(takerWethBefore2), _uint(takerUsdcBefore2)
@@ -627,6 +644,9 @@ contract TraceExporter is Test {
                 ',"virtualReservesBefore":{"reserveA":"', _uint(poolWethMid), '","reserveB":"', _uint(poolUsdcMid), '"}',
                 ',"virtualReservesAfter":{"reserveA":"', _uint(vOut_decay2), '","reserveB":"', _uint(vIn_decay2), '"}}'
             ),
+            // registers after decay (USDC->WETH): NON-ZERO live offset applied —
+            // balanceIn=virtual USDC (+offsetIn), balanceOut=virtual WETH (-offsetOut)
+            _registers(vIn_decay2, vOut_decay2, amountIn2, 0, 0),
             // ERC-20 balances unchanged (decay modifies virtual registers only)
             _balSnap(
                 _uint(makerWethBefore2), _uint(makerUsdcBefore2),
@@ -659,6 +679,8 @@ contract TraceExporter is Test {
                 ',"feeAmount":"', _uint(feeAmount2), '"',
                 ',"netAmountIn":"', _uint(netAmountIn2), '"}'
             ),
+            // registers after fee: amountIn (USDC) reduced to net for the inner loop
+            _registers(vIn_decay2, vOut_decay2, netAmountIn2, 0, 0),
             _balSnap(
                 _uint(makerWethBefore2), _uint(makerUsdcBefore2),
                 _uint(takerWethBefore2), _uint(takerUsdcBefore2)
@@ -685,6 +707,8 @@ contract TraceExporter is Test {
                 ',"netAmountIn":"', _uint(netAmountIn2), '"',
                 ',"amountOut":"', _uint(realOut2), '"}'
             ),
+            // registers after the AMM leaf: amountOut (WETH) set from net USDC input
+            _registers(vIn_decay2, vOut_decay2, netAmountIn2, realOut2, 0),
             _balSnap(
                 _uint(makerWethBefore2), _uint(makerUsdcBefore2),
                 _uint(takerWethBefore2), _uint(takerUsdcBefore2)
@@ -715,6 +739,7 @@ contract TraceExporter is Test {
         uint256 blockNum,
         uint256 amtIn,
         uint256 amtOut,
+        bool quoteEqualsSwap,
         string memory stepsJson
     ) internal pure returns (string memory) {
         // feeBps in human-readable bps (out of 100, not 1e9)
@@ -736,6 +761,7 @@ contract TraceExporter is Test {
             ',"swapAmountOut":"', _uint(amtOut), '"',
             ',"swapDirection":"A_TO_B"',
             ',"totalFeesBps":', _uint(humanFeeBps),
+            ',"quoteEqualsSwap":', quoteEqualsSwap ? "true" : "false",
             '},"steps":[', stepsJson, ']}'
         );
     }
@@ -770,6 +796,8 @@ contract TraceExporter is Test {
             0, "_salt",
             "Uniqueness salt: pure no-op that perturbs the order hash to distinguish this pool from others",
             string.concat('{"type":"_salt","salt":"', _uint(901), '"}'),
+            // registers after salt: real reserves seeded, gross amountIn, no output yet
+            _registers(rIn0, rOut0, amountIn, 0, 0),
             // balances before: initial state
             _balSnap(
                 _uint(makerWethBefore), _uint(makerUsdcBefore),
@@ -803,6 +831,8 @@ contract TraceExporter is Test {
                 ',"virtualReservesBefore":{"reserveA":"', _uint(rIn0), '","reserveB":"', _uint(rOut0), '"}',
                 ',"virtualReservesAfter":{"reserveA":"', _uint(vIn_decay), '","reserveB":"', _uint(vOut_decay), '"}}'
             ),
+            // registers after decay: balances now virtual; amountIn still gross
+            _registers(vIn_decay, vOut_decay, amountIn, 0, 0),
             // Balances unchanged (decay modifies virtual registers, not ERC-20 balances)
             _balSnap(
                 _uint(makerWethBefore), _uint(makerUsdcBefore),
@@ -834,6 +864,8 @@ contract TraceExporter is Test {
                 ',"feeAmount":"', _uint(feeAmount), '"',
                 ',"netAmountIn":"', _uint(netAmountIn), '"}'
             ),
+            // registers after fee: amountIn reduced to net for the inner swap loop
+            _registers(vIn_decay, vOut_decay, netAmountIn, 0, 0),
             // Balances unchanged (fee modifies amountIn register, not ERC-20 yet)
             _balSnap(
                 _uint(makerWethBefore), _uint(makerUsdcBefore),
@@ -862,6 +894,8 @@ contract TraceExporter is Test {
                 ',"netAmountIn":"', _uint(netAmountIn), '"',
                 ',"amountOut":"', _uint(realOut), '"}'
             ),
+            // registers after the AMM leaf: amountOut now set from net input
+            _registers(vIn_decay, vOut_decay, netAmountIn, realOut, 0),
             // Before: same as pre-swap (ERC-20 moves happen after program)
             _balSnap(
                 _uint(makerWethBefore), _uint(makerUsdcBefore),
@@ -964,6 +998,7 @@ contract TraceExporter is Test {
             0, "_salt",
             "Uniqueness salt: pure no-op that perturbs the order hash to distinguish this concentrated pool",
             string.concat('{"type":"_salt","salt":"', _uint(902), '"}'),
+            _registers(rIn0, rOut0, amountIn, 0, 0),
             _balSnap(
                 _uint(makerWethBefore), _uint(makerUsdcBefore),
                 _uint(takerWethBefore), _uint(takerUsdcBefore)
@@ -989,6 +1024,8 @@ contract TraceExporter is Test {
                 ',"virtualReservesBefore":{"reserveA":"', _uint(rIn0), '","reserveB":"', _uint(rOut0), '"}',
                 ',"virtualReservesAfter":{"reserveA":"', _uint(vIn_decay), '","reserveB":"', _uint(vOut_decay), '"}}'
             ),
+            // registers after decay: offset=0 on first swap, so balances = real
+            _registers(vIn_decay, vOut_decay, amountIn, 0, 0),
             _balSnap(
                 _uint(makerWethBefore), _uint(makerUsdcBefore),
                 _uint(takerWethBefore), _uint(takerUsdcBefore)
@@ -1015,6 +1052,9 @@ contract TraceExporter is Test {
                 ',"feeAmount":"', _uint(feeAmount), '"',
                 ',"netAmountIn":"', _uint(netAmountIn), '"}'
             ),
+            // registers after fee: amountIn reduced to net; the L-based extension is
+            // applied by the AMM leaf, so balances here are still the decay view
+            _registers(vIn_decay, vOut_decay, netAmountIn, 0, 0),
             _balSnap(
                 _uint(makerWethBefore), _uint(makerUsdcBefore),
                 _uint(takerWethBefore), _uint(takerUsdcBefore)
@@ -1044,6 +1084,9 @@ contract TraceExporter is Test {
                 ',"netAmountIn":"', _uint(netAmountIn), '"',
                 ',"amountOut":"', _uint(realOut), '"}'
             ),
+            // registers after the concentrated leaf: balances are the amplified
+            // (L-extended) virtual reserves the curve priced against; amountOut set
+            _registers(vIn_conc, vOut_conc, netAmountIn, realOut, 0),
             _balSnap(
                 _uint(makerWethBefore), _uint(makerUsdcBefore),
                 _uint(takerWethBefore), _uint(takerUsdcBefore)
@@ -1072,6 +1115,7 @@ contract TraceExporter is Test {
         string memory opcode,
         string memory description,
         string memory paramsJson,
+        string memory registersJson,
         string memory balBefore,
         string memory balAfter,
         string memory curveStateJson
@@ -1081,10 +1125,32 @@ contract TraceExporter is Test {
             ',"opcode":', _jsonStr(opcode),
             ',"description":', _jsonStr(description),
             ',"params":', paramsJson,
+            ',"registers":', registersJson,
             ',"balancesBefore":', balBefore,
             ',"balancesAfter":', balAfter,
             ',"curveState":', curveStateJson,
             '}'
+        );
+    }
+
+    /// @dev The 5 SwapVM `SwapRegisters` (ctx.swap) AS OF AFTER this instruction.
+    ///      balanceIn/balanceOut are the virtual reserves the VM prices against;
+    ///      amountIn/amountOut are the in/out registers; amountNetPulled is the net
+    ///      input pulled from the maker (only protocol-fee opcodes increment it — for
+    ///      a flat-fee program it stays 0, which is the honest value here).
+    function _registers(
+        uint256 balanceIn,
+        uint256 balanceOut,
+        uint256 amountIn,
+        uint256 amountOut,
+        uint256 amountNetPulled
+    ) internal pure returns (string memory) {
+        return string.concat(
+            '{"balanceIn":"', _uint(balanceIn),
+            '","balanceOut":"', _uint(balanceOut),
+            '","amountIn":"', _uint(amountIn),
+            '","amountOut":"', _uint(amountOut),
+            '","amountNetPulled":"', _uint(amountNetPulled), '"}'
         );
     }
 
