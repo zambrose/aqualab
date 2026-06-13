@@ -365,3 +365,98 @@ html, body {
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+
+/* ---- quote==swap badge ---- */
+.meta-qes-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  border: 1px solid;
+  cursor: default;
+}
+.meta-qes-pass {
+  color: var(--green);
+  border-color: var(--green);
+  background: rgba(86, 211, 100, 0.08);
+}
+.meta-qes-fail {
+  color: var(--red);
+  border-color: var(--red);
+  background: rgba(247, 129, 102, 0.08);
+}
+
+/* ---- SwapVM Registers table ---- */
+.registers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+.registers-table thead th {
+  text-align: left;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.reg-th-name  { width: 34%; }
+.reg-th-human { width: 40%; }
+.reg-th-raw   { width: 26%; color: var(--text-dim); }
+
+.registers-table tbody tr {
+  border-top: 1px solid var(--bg3);
+  transition: background 0.1s;
+}
+.registers-table tbody tr:hover {
+  background: var(--bg3);
+}
+.registers-table td {
+  padding: 4px 4px 4px 0;
+  vertical-align: middle;
+}
+.reg-name {
+  color: var(--text-dim);
+  cursor: default;
+}
+.reg-human {
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.reg-raw {
+  color: var(--text-dim);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90px;
+  cursor: default;
+}
+
+/* Highlight registers that changed on this step */
+.reg-changed .reg-name  { color: var(--teal); }
+.reg-changed .reg-human { color: var(--teal); font-weight: 600; }
+.reg-changed-mark {
+  color: var(--orange);
+  font-size: 10px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Direction note below the registers table */
+.reg-direction-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 5px;
+  padding-left: 2px;
+}
+.reg-direction-note strong {
+  color: var(--text);
+}

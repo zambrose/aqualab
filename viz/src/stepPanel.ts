@@ -17,8 +17,115 @@ import type {
   ParamsFlatFeeAmountInXD,
   ParamsXycSwapXD,
   ParamsXycConcentrateGrowLiquidity2D,
+  SwapRegisters,
+  TokenInfo,
 } from './types.js';
 import { formatAmount, formatDelta, formatBps, truncateHex } from './format.js';
+
+/**
+ * Render the SwapVM registers panel for the current step.
+ *
+ * Direction mapping (VM-relative in/out → real token):
+ *   swapDirection A_TO_B → tokenIn = tokenA, tokenOut = tokenB
+ *   swapDirection B_TO_A → tokenIn = tokenB, tokenOut = tokenA
+ *
+ * Registers that changed value vs. the previous step are highlighted with a
+ * CSS class so the per-instruction mutation is visible at a glance.
+ */
+function renderRegisters(
+  registers: SwapRegisters,
+  prevRegisters: SwapRegisters | null,
+  tokenA: TokenInfo,
+  tokenB: TokenInfo,
+  swapDirection: 'A_TO_B' | 'B_TO_A',
+): string {
+  // Resolve which token is "in" and which is "out" for this swap.
+  const tokenIn  = swapDirection === 'A_TO_B' ? tokenA : tokenB;
+  const tokenOut = swapDirection === 'A_TO_B' ? tokenB : tokenA;
+
+  /**
+   * Format a bigint-string using the correct token's decimals/symbol.
+   * Falls back to raw value if formatting throws.
+   */
+  function fmt(raw: string, token: TokenInfo): string {
+    try {
+      return formatAmount(raw, token, 6);
+    } catch {
+      return raw;
+    }
+  }
+
+  /** Return CSS class if the register value changed; empty string if unchanged or no prev. */
+  function changedClass(field: keyof SwapRegisters): string {
+    if (!prevRegisters) return '';
+    return prevRegisters[field] !== registers[field] ? 'reg-changed' : '';
+  }
+
+  /** Render one register row. */
+  function regRow(
+    name: string,
+    value: string,
+    humanValue: string,
+    tooltip: string,
+    field: keyof SwapRegisters,
+  ): string {
+    const cls = changedClass(field);
+    const changedMark = cls ? ' <span class="reg-changed-mark" title="Changed this step">▲</span>' : '';
+    return `<tr class="${cls}">
+      <td class="reg-name" title="${escHtml(tooltip)}">${escHtml(name)}</td>
+      <td class="reg-human">${escHtml(humanValue)}${changedMark}</td>
+      <td class="reg-raw" title="${escHtml(value)}">${escHtml(value.length > 20 ? value.slice(0, 12) + '…' : value)}</td>
+    </tr>`;
+  }
+
+  return `<table class="registers-table">
+    <thead>
+      <tr>
+        <th class="reg-th-name">Register</th>
+        <th class="reg-th-human">Value</th>
+        <th class="reg-th-raw">Raw (uint256)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${regRow(
+        'balanceIn',
+        registers.balanceIn,
+        fmt(registers.balanceIn, tokenIn),
+        `ctx.swap.balanceIn — virtual reserve of the input token (${tokenIn.symbol})`,
+        'balanceIn',
+      )}
+      ${regRow(
+        'balanceOut',
+        registers.balanceOut,
+        fmt(registers.balanceOut, tokenOut),
+        `ctx.swap.balanceOut — virtual reserve of the output token (${tokenOut.symbol})`,
+        'balanceOut',
+      )}
+      ${regRow(
+        'amountIn',
+        registers.amountIn,
+        fmt(registers.amountIn, tokenIn),
+        `ctx.swap.amountIn — taker gross input; fee wrappers reduce this`,
+        'amountIn',
+      )}
+      ${regRow(
+        'amountOut',
+        registers.amountOut,
+        fmt(registers.amountOut, tokenOut),
+        `ctx.swap.amountOut — computed output; set by the AMM leaf`,
+        'amountOut',
+      )}
+      ${regRow(
+        'amountNetPulled',
+        registers.amountNetPulled,
+        fmt(registers.amountNetPulled, tokenIn),
+        `ctx.swap.amountNetPulled — net input pulled to the maker (protocol-fee opcodes only; 0 in flat-fee programs)`,
+        'amountNetPulled',
+      )}
+    </tbody>
+  </table>
+  <p class="reg-direction-note">In/Out direction: <strong>${escHtml(swapDirection.replace('_', ' → '))}</strong> — balanceIn/amountIn = ${escHtml(tokenIn.symbol)}, balanceOut/amountOut = ${escHtml(tokenOut.symbol)}</p>`;
+}
 
 /** Render the param table for any opcode */
 function renderParams(params: OpcodeParams): string {
@@ -112,8 +219,8 @@ function opcodeClass(opcode: string): string {
   return 'opcode-generic';
 }
 
-export function renderStepPanel(container: HTMLElement, step: TraceStep, trace: Trace): void {
-  const { tokenA, tokenB } = trace.metadata;
+export function renderStepPanel(container: HTMLElement, step: TraceStep, trace: Trace, prevStep: TraceStep | null = null): void {
+  const { tokenA, tokenB, swapDirection } = trace.metadata;
 
   const dMakerA = formatDelta(step.balancesBefore.makerTokenA, step.balancesAfter.makerTokenA, tokenA);
   const dMakerB = formatDelta(step.balancesBefore.makerTokenB, step.balancesAfter.makerTokenB, tokenB);
@@ -145,6 +252,9 @@ export function renderStepPanel(container: HTMLElement, step: TraceStep, trace: 
 
     <h3 class="section-title">Params</h3>
     ${renderParams(step.params)}
+
+    <h3 class="section-title">SwapVM Registers</h3>
+    ${renderRegisters(step.registers, prevStep?.registers ?? null, tokenA, tokenB, swapDirection)}
 
     <h3 class="section-title">Balance Deltas</h3>
     <table class="balance-table">
