@@ -1,1 +1,14 @@
-.claude/worktrees/
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Foundry
+/cache/
+/out/
+/broadcast/
+/lib/
+
+# Node
+node_modules/
+dist/
