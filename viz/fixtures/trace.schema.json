@@ -68,7 +68,7 @@
         "totalFeesBps": {
           "type": "number",
           "minimum": 0,
-          "description": "Effective total fee in basis points applied across all steps."
+          "description": "Effective total fee in basis points (out of 10000, i.e. 30 = 0.30%) applied across all steps."
         },
         "label": {
           "type": "string",
@@ -128,12 +128,13 @@
         },
         "opcode": {
           "type": "string",
-          "description": "SwapVM opcode name exactly as it appears in the instruction set.",
+          "description": "SwapVM opcode name exactly as it appears in the AquaOpcodes instruction set.",
           "examples": [
-            "_xycConcentrateGrowLiquidityXD",
-            "_progressiveFeeInXD",
+            "_salt",
             "_decayXD",
+            "_flatFeeAmountInXD",
             "_xycSwapXD",
+            "_xycConcentrateGrowLiquidity2D",
             "BALANCE_SETUP"
           ]
         },
@@ -145,10 +146,11 @@
           "type": "object",
           "description": "Decoded opcode parameters — shape varies by opcode (see below).",
           "anyOf": [
-            { "$ref": "#/$defs/paramsBalanceSetup" },
-            { "$ref": "#/$defs/paramsXycConcentrateGrowLiquidityXD" },
-            { "$ref": "#/$defs/paramsProgressiveFeeInXD" },
+            { "$ref": "#/$defs/paramsSalt" },
             { "$ref": "#/$defs/paramsDecayXD" },
+            { "$ref": "#/$defs/paramsFlatFeeAmountInXD" },
+            { "$ref": "#/$defs/paramsXycSwapXD" },
+            { "$ref": "#/$defs/paramsXycConcentrateGrowLiquidity2D" },
             { "$ref": "#/$defs/paramsGeneric" }
           ]
         },
@@ -165,80 +167,86 @@
         }
       }
     },
-    "paramsBalanceSetup": {
+    "paramsSalt": {
       "type": "object",
-      "required": ["type", "makerDeposit", "takerDeposit"],
+      "required": ["type", "salt"],
       "properties": {
-        "type": { "type": "string", "const": "BALANCE_SETUP" },
-        "makerDeposit": { "$ref": "#/$defs/tokenAmount" },
-        "takerDeposit": { "$ref": "#/$defs/tokenAmount" }
-      }
-    },
-    "paramsXycConcentrateGrowLiquidityXD": {
-      "type": "object",
-      "required": ["type", "lowerTick", "upperTick", "currentTick", "liquidity", "sqrtPriceX96"],
-      "properties": {
-        "type": { "type": "string", "const": "_xycConcentrateGrowLiquidityXD" },
-        "lowerTick": { "type": "integer", "description": "Lower tick boundary of the concentrated range." },
-        "upperTick": { "type": "integer", "description": "Upper tick boundary of the concentrated range." },
-        "currentTick": { "type": "integer", "description": "Current tick before the swap." },
-        "liquidity": { "$ref": "#/$defs/bigint", "description": "Active liquidity in the range (uint128)." },
-        "sqrtPriceX96": { "$ref": "#/$defs/bigint", "description": "Current sqrt(price) in X96 fixed-point (uint160)." },
-        "amountSpecified": { "$ref": "#/$defs/bigint", "description": "Exact amount of the input token fed to the AMM." },
-        "zeroForOne": { "type": "boolean", "description": "True if swap direction is tokenA → tokenB." },
-        "concentratedRangePct": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 100,
-          "description": "Percentage of full-range liquidity that this concentrated range represents."
-        }
-      }
-    },
-    "paramsProgressiveFeeInXD": {
-      "type": "object",
-      "required": ["type", "baseFeesBps", "progressiveRate", "appliedFeesBps"],
-      "properties": {
-        "type": { "type": "string", "const": "_progressiveFeeInXD" },
-        "baseFeesBps": {
-          "type": "number",
-          "description": "Base fee in basis points before progressive scaling."
-        },
-        "progressiveRate": {
-          "type": "number",
-          "description": "Rate at which fee grows with trade size (bps per unit notional, e.g. bps per 1e18)."
-        },
-        "appliedFeesBps": {
-          "type": "number",
-          "description": "Effective fee basis points after applying the progressive formula to this trade."
-        },
-        "tradeNotional": {
-          "$ref": "#/$defs/bigint",
-          "description": "Notional amount (input token, native units) used in the progressive fee calculation."
-        }
-      }
+        "type": { "type": "string", "const": "_salt" },
+        "salt": { "$ref": "#/$defs/bigint", "description": "64-bit salt value used to perturb the order hash (ensures unique strategy identifiers)." }
+      },
+      "additionalProperties": false
     },
     "paramsDecayXD": {
       "type": "object",
-      "required": ["type", "halfLifeSeconds", "elapsedSeconds", "decayFactor", "virtualReservesBefore", "virtualReservesAfter"],
+      "required": ["type", "decayPeriodSeconds", "elapsedSeconds", "currentOffsetIn", "currentOffsetOut", "virtualReservesBefore", "virtualReservesAfter"],
       "properties": {
         "type": { "type": "string", "const": "_decayXD" },
-        "halfLifeSeconds": {
+        "decayPeriodSeconds": {
           "type": "number",
-          "description": "Half-life of the virtual reserve decay in seconds."
+          "description": "Full decay period in seconds (the window over which the offset linearly decays to 0)."
         },
         "elapsedSeconds": {
           "type": "number",
           "description": "Seconds elapsed since last interaction (drives decay magnitude)."
         },
-        "decayFactor": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "description": "exp(-λ·t) factor applied to virtual reserves (0=fully decayed, 1=no decay)."
+        "currentOffsetIn": {
+          "$ref": "#/$defs/bigint",
+          "description": "Current stored offset for tokenIn (decayed from prior trades). Added to balanceIn as virtual reserve boost."
+        },
+        "currentOffsetOut": {
+          "$ref": "#/$defs/bigint",
+          "description": "Current stored offset for tokenOut (decayed from prior trades). Subtracted from balanceOut as virtual reserve penalty."
         },
         "virtualReservesBefore": { "$ref": "#/$defs/reservePair" },
         "virtualReservesAfter": { "$ref": "#/$defs/reservePair" }
-      }
+      },
+      "additionalProperties": true
+    },
+    "paramsFlatFeeAmountInXD": {
+      "type": "object",
+      "required": ["type", "feeBps", "humanFeeBps", "grossAmountIn", "feeAmount", "netAmountIn"],
+      "properties": {
+        "type": { "type": "string", "const": "_flatFeeAmountInXD" },
+        "feeBps": {
+          "type": "number",
+          "description": "Fee rate in SwapVM units (1e9 = 100%). E.g. 3_000_000 = 0.30%."
+        },
+        "humanFeeBps": {
+          "type": "number",
+          "description": "Fee rate in traditional basis points (out of 10000). E.g. 30 = 0.30%."
+        },
+        "grossAmountIn": { "$ref": "#/$defs/bigint", "description": "Full taker-defined amountIn before fee deduction." },
+        "feeAmount": { "$ref": "#/$defs/bigint", "description": "Fee deducted from amountIn (ceiling division): ceil(grossAmountIn * feeBps / 1e9)." },
+        "netAmountIn": { "$ref": "#/$defs/bigint", "description": "Net input the AMM sees: grossAmountIn - feeAmount." }
+      },
+      "additionalProperties": false
+    },
+    "paramsXycSwapXD": {
+      "type": "object",
+      "required": ["type", "virtualBalanceIn", "virtualBalanceOut", "netAmountIn", "amountOut"],
+      "properties": {
+        "type": { "type": "string", "const": "_xycSwapXD" },
+        "virtualBalanceIn": { "$ref": "#/$defs/bigint", "description": "Effective balanceIn seen by the AMM (real + decay offset adjustment)." },
+        "virtualBalanceOut": { "$ref": "#/$defs/bigint", "description": "Effective balanceOut seen by the AMM (real - decay offset adjustment)." },
+        "netAmountIn": { "$ref": "#/$defs/bigint", "description": "Net amountIn after fee deduction." },
+        "amountOut": { "$ref": "#/$defs/bigint", "description": "Computed output: netAmountIn * virtualBalanceOut / (virtualBalanceIn + netAmountIn)." }
+      },
+      "additionalProperties": false
+    },
+    "paramsXycConcentrateGrowLiquidity2D": {
+      "type": "object",
+      "required": ["type", "sqrtPriceMin", "sqrtPriceMax", "liquidity", "virtualBalanceIn", "virtualBalanceOut", "netAmountIn", "amountOut"],
+      "properties": {
+        "type": { "type": "string", "const": "_xycConcentrateGrowLiquidity2D" },
+        "sqrtPriceMin": { "$ref": "#/$defs/bigint", "description": "sqrt(P_min) in 1e18 fixed-point, P = tokenGt/tokenLt." },
+        "sqrtPriceMax": { "$ref": "#/$defs/bigint", "description": "sqrt(P_max) in 1e18 fixed-point, P = tokenGt/tokenLt." },
+        "liquidity": { "$ref": "#/$defs/bigint", "description": "Computed L value (virtual liquidity parameter)." },
+        "virtualBalanceIn": { "$ref": "#/$defs/bigint", "description": "Virtual balanceIn = real balanceIn + L-based extension." },
+        "virtualBalanceOut": { "$ref": "#/$defs/bigint", "description": "Virtual balanceOut = real balanceOut + L-based extension." },
+        "netAmountIn": { "$ref": "#/$defs/bigint", "description": "Net amountIn after fee deduction." },
+        "amountOut": { "$ref": "#/$defs/bigint", "description": "Computed output: netAmountIn * virtualBalanceOut / (virtualBalanceIn + netAmountIn)." }
+      },
+      "additionalProperties": false
     },
     "paramsGeneric": {
       "type": "object",
@@ -294,7 +302,7 @@
         },
         "virtualReserves": {
           "$ref": "#/$defs/reservePair",
-          "description": "Virtual reserves including MEV-protection offset from _decayXD."
+          "description": "Virtual reserves including MEV-protection offset from _decayXD and/or concentrated-liquidity extension from _xycConcentrateGrowLiquidity2D."
         },
         "spotPriceAInB": {
           "type": "number",
@@ -302,7 +310,7 @@
         },
         "feeBps": {
           "type": "number",
-          "description": "Fee in basis points applied at this step."
+          "description": "Fee in traditional basis points (out of 10000) applied at this step."
         },
         "concentratedRange": {
           "type": ["object", "null"],

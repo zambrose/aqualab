@@ -1,12 +1,22 @@
 /**
  * Renders the instruction-pipeline step panel:
  * opcode name, decoded params table, balance deltas.
+ *
+ * Opcode names match the real AquaOpcodes table (as discovered by Agent 2):
+ *   _salt                          — Controls._salt (index 21)
+ *   _decayXD                       — Decay._decayXD (index 20)
+ *   _flatFeeAmountInXD             — Fee._flatFeeAmountInXD (index 22)
+ *   _xycSwapXD                     — XYCSwap._xycSwapXD (index 18)
+ *   _xycConcentrateGrowLiquidity2D — XYCConcentrate._xycConcentrateGrowLiquidity2D (index 19)
  */
 
 import type {
   TraceStep, Trace, OpcodeParams,
-  ParamsBalanceSetup, ParamsXycConcentrateGrowLiquidityXD,
-  ParamsProgressiveFeeInXD, ParamsDecayXD,
+  ParamsSalt,
+  ParamsDecayXD,
+  ParamsFlatFeeAmountInXD,
+  ParamsXycSwapXD,
+  ParamsXycConcentrateGrowLiquidity2D,
 } from './types.js';
 import { formatAmount, formatDelta, formatBps, truncateHex } from './format.js';
 
@@ -14,37 +24,50 @@ import { formatAmount, formatDelta, formatBps, truncateHex } from './format.js';
 function renderParams(params: OpcodeParams): string {
   const rows: [string, string][] = [];
 
-  if (params.type === 'BALANCE_SETUP') {
-    const p = params as ParamsBalanceSetup;
-    rows.push(['makerDeposit.token', p.makerDeposit.token]);
-    rows.push(['makerDeposit.amount', p.makerDeposit.amount]);
-    rows.push(['takerDeposit.token', p.takerDeposit.token]);
-    rows.push(['takerDeposit.amount', p.takerDeposit.amount]);
-  } else if (params.type === '_xycConcentrateGrowLiquidityXD') {
-    const p = params as ParamsXycConcentrateGrowLiquidityXD;
-    rows.push(['lowerTick', p.lowerTick.toString()]);
-    rows.push(['upperTick', p.upperTick.toString()]);
-    rows.push(['currentTick', p.currentTick.toString()]);
-    rows.push(['liquidity', p.liquidity]);
-    rows.push(['sqrtPriceX96', truncateHex('0x' + BigInt(p.sqrtPriceX96).toString(16))]);
-    rows.push(['amountSpecified', p.amountSpecified]);
-    rows.push(['zeroForOne', String(p.zeroForOne)]);
-    rows.push(['concentratedRangePct', `${p.concentratedRangePct}%`]);
-  } else if (params.type === '_progressiveFeeInXD') {
-    const p = params as ParamsProgressiveFeeInXD;
-    rows.push(['baseFeesBps', `${p.baseFeesBps} bps`]);
-    rows.push(['progressiveRate', `${p.progressiveRate} bps / 1e18`]);
-    rows.push(['appliedFeesBps', formatBps(p.appliedFeesBps)]);
-    rows.push(['tradeNotional', p.tradeNotional]);
+  if (params.type === '_salt') {
+    const p = params as ParamsSalt;
+    rows.push(['salt (uint64)', p.salt]);
+    rows.push(['effect', 'No-op — only perturbs the order hash for pool uniqueness']);
   } else if (params.type === '_decayXD') {
     const p = params as ParamsDecayXD;
-    rows.push(['halfLifeSeconds', `${p.halfLifeSeconds}s`]);
+    rows.push(['decayPeriodSeconds', `${p.decayPeriodSeconds}s`]);
     rows.push(['elapsedSeconds', `${p.elapsedSeconds}s`]);
-    rows.push(['decayFactor', p.decayFactor.toFixed(4)]);
+    const decayFactor = p.decayPeriodSeconds > 0
+      ? Math.max(0, 1 - p.elapsedSeconds / p.decayPeriodSeconds)
+      : 1;
+    rows.push(['decay (linear 1-t/T)', decayFactor.toFixed(4)]);
+    rows.push(['offsetIn (current)', p.currentOffsetIn]);
+    rows.push(['offsetOut (current)', p.currentOffsetOut]);
     rows.push(['vReserveA before→after',
-      `${(Number(p.virtualReservesBefore.reserveA) / 1e18).toFixed(2)} → ${(Number(p.virtualReservesAfter.reserveA) / 1e18).toFixed(2)} WETH`]);
+      `${(Number(p.virtualReservesBefore.reserveA) / 1e18).toFixed(4)} → ${(Number(p.virtualReservesAfter.reserveA) / 1e18).toFixed(4)} WETH`]);
     rows.push(['vReserveB before→after',
       `${(Number(p.virtualReservesBefore.reserveB) / 1e6).toFixed(0)} → ${(Number(p.virtualReservesAfter.reserveB) / 1e6).toFixed(0)} USDC`]);
+  } else if (params.type === '_flatFeeAmountInXD') {
+    const p = params as ParamsFlatFeeAmountInXD;
+    rows.push(['feeBps (SwapVM 1e9=100%)', p.feeBps.toLocaleString()]);
+    rows.push(['humanFeeBps (out of 10000)', `${p.humanFeeBps} bps (${(p.humanFeeBps / 100).toFixed(2)}%)`]);
+    rows.push(['grossAmountIn (WETH)', (Number(p.grossAmountIn) / 1e18).toFixed(6)]);
+    rows.push(['feeAmount (WETH)', (Number(p.feeAmount) / 1e18).toFixed(6)]);
+    rows.push(['netAmountIn (WETH)', (Number(p.netAmountIn) / 1e18).toFixed(6)]);
+  } else if (params.type === '_xycSwapXD') {
+    const p = params as ParamsXycSwapXD;
+    rows.push(['curve', 'constant-product x*y=k']);
+    rows.push(['virtualBalanceIn (WETH)', (Number(p.virtualBalanceIn) / 1e18).toFixed(4)]);
+    rows.push(['virtualBalanceOut (USDC)', (Number(p.virtualBalanceOut) / 1e6).toFixed(0)]);
+    rows.push(['netAmountIn (WETH)', (Number(p.netAmountIn) / 1e18).toFixed(6)]);
+    rows.push(['amountOut (USDC)', (Number(p.amountOut) / 1e6).toFixed(6)]);
+    rows.push(['formula', 'netIn * vOut / (vIn + netIn)']);
+  } else if (params.type === '_xycConcentrateGrowLiquidity2D') {
+    const p = params as ParamsXycConcentrateGrowLiquidity2D;
+    rows.push(['curve', 'concentrated-liquidity (price band)']);
+    rows.push(['sqrtPriceMin', truncateHex('0x' + BigInt(p.sqrtPriceMin).toString(16))]);
+    rows.push(['sqrtPriceMax', truncateHex('0x' + BigInt(p.sqrtPriceMax).toString(16))]);
+    rows.push(['liquidity L', p.liquidity]);
+    rows.push(['virtualBalanceIn (WETH)', (Number(p.virtualBalanceIn) / 1e18).toFixed(4)]);
+    rows.push(['virtualBalanceOut (USDC)', (Number(p.virtualBalanceOut) / 1e6).toFixed(0)]);
+    rows.push(['netAmountIn (WETH)', (Number(p.netAmountIn) / 1e18).toFixed(6)]);
+    rows.push(['amountOut (USDC)', (Number(p.amountOut) / 1e6).toFixed(6)]);
+    rows.push(['amplification', `${(Number(p.virtualBalanceIn) / Math.max(1, Number(p.virtualBalanceIn) - Number(p.liquidity) * 1e-18)).toFixed(2)}x vs plain x*y=k`]);
   } else {
     for (const [k, v] of Object.entries(params as Record<string, unknown>)) {
       if (k !== 'type') rows.push([k, String(v)]);
@@ -61,11 +84,22 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/**
+ * Map opcode name to CSS class for color-coding.
+ * Uses substring matching so it works with all real opcode names:
+ *   _salt              → opcode-generic
+ *   _decayXD           → opcode-decay   (contains 'decay'/'Decay')
+ *   _flatFeeAmountInXD → opcode-fee     (contains 'Fee'/'fee')
+ *   _xycSwapXD         → opcode-amm     (contains 'Swap')
+ *   _xycConcentrateGrowLiquidity2D → opcode-amm (contains 'Concentrate'/'Swap')
+ *   BALANCE_SETUP      → opcode-setup
+ */
 function opcodeClass(opcode: string): string {
   if (opcode === 'BALANCE_SETUP') return 'opcode-setup';
-  if (opcode.includes('Concentrate') || opcode.includes('Swap')) return 'opcode-amm';
-  if (opcode.includes('Fee')) return 'opcode-fee';
-  if (opcode.includes('decay') || opcode.includes('Decay')) return 'opcode-decay';
+  if (opcode === '_salt') return 'opcode-generic';
+  if (opcode.toLowerCase().includes('concentrate') || opcode.toLowerCase().includes('swap')) return 'opcode-amm';
+  if (opcode.toLowerCase().includes('fee')) return 'opcode-fee';
+  if (opcode.toLowerCase().includes('decay')) return 'opcode-decay';
   return 'opcode-generic';
 }
 
@@ -138,7 +172,7 @@ export function renderPipelineBreadcrumb(container: HTMLElement, steps: TraceSte
     <button class="pipeline-step ${i === currentIndex ? 'active' : ''} ${opcodeClass(s.opcode)}"
             data-index="${i}" title="${escHtml(s.opcode)}">
       <span class="pipeline-num">${i + 1}</span>
-      <span class="pipeline-name">${escHtml(s.opcode.replace('_', '').replace('XD', '').slice(0, 12))}</span>
+      <span class="pipeline-name">${escHtml(s.opcode.replace(/^_/, '').replace('XD', '').slice(0, 14))}</span>
     </button>
     ${i < steps.length - 1 ? '<span class="pipeline-arrow">→</span>' : ''}
   `).join('');
