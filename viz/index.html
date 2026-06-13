@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AquaLab — SwapVM Trace Visualizer</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-left">
+      <span class="logo-icon">◈</span>
+      <h1 class="app-title">AquaLab <span class="title-sub">SwapVM Trace Visualizer</span></h1>
+    </div>
+    <div class="header-right">
+      <label class="select-label" for="trace-select">Trace:</label>
+      <select id="trace-select" class="trace-select">
+        <option value="small">Small Swap — 0.1 WETH</option>
+        <option value="large">Large Swap — 50 WETH</option>
+      </select>
+    </div>
+  </header>
+
+  <div id="meta-bar" class="meta-bar"></div>
+
+  <main class="app-main">
+    <!-- Left column: instruction pipeline + step details -->
+    <section class="left-col">
+      <div class="pipeline-container">
+        <h2 class="col-title">Instruction Pipeline</h2>
+        <div id="pipeline-row" class="pipeline-row"></div>
+      </div>
+
+      <div class="nav-controls">
+        <button id="btn-prev" class="nav-btn" title="Previous step (←)">
+          <span class="nav-arrow">←</span> Prev
+        </button>
+        <button id="btn-next" class="nav-btn primary" title="Next step (→)">
+          Next <span class="nav-arrow">→</span>
+        </button>
+        <span class="kbd-hint">or use ← → arrow keys</span>
+      </div>
+      <div class="progress-bar-wrap">
+        <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%"></div>
+      </div>
+
+      <div id="step-panel" class="step-panel"></div>
+    </section>
+
+    <!-- Right column: AMM curve canvas -->
+    <section class="right-col">
+      <h2 class="col-title">AMM Price Curve</h2>
+      <div class="canvas-wrapper">
+        <canvas id="curve-canvas"></canvas>
+      </div>
+      <div class="curve-legend">
+        <span class="legend-item"><span class="legend-dot" style="background:#1f6feb"></span> Real reserves (xy=k)</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#388bfd44;border:1px dashed #388bfd"></span> Virtual reserves</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#d2a8ff44;border:1px solid #8957e5"></span> Conc. range</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#f78166"></span> Swap point</span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>AquaLab · ETHGlobal NY 2026 · 1inch Aqua / SwapVM</span>
+    <span class="footer-sep">·</span>
+    <span>opcodes: <code>_xycConcentrateGrowLiquidityXD</code> · <code>_progressiveFeeInXD</code> · <code>_decayXD</code></span>
+  </footer>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
