@@ -386,12 +386,14 @@ The `BALANCE_SETUP` framing step was replaced with the real `_salt` instruction 
 
 ---
 
-## 11. Correction pass (contracts) — BLOCKED on canonical router (flagged to orchestrator)
+## 11. Correction pass (contracts) — RESOLVED via "hybrid + on-chain proof"
 
-A correction pass attempted four fix groups (canonical-router binding, quote==swap
-round-trip, CoreInvariants inheritance, trace `registers`/`quoteEqualsSwap`). **All
-four are blocked on Fix Group A**, which uncovered a hard discrepancy. Recorded here
-so it is not re-derived.
+A correction pass shipped four fix groups (canonical-router linkage, quote==swap
+round-trip, CoreInvariants inheritance, trace `registers`/`quoteEqualsSwap`). An
+earlier pass flagged a hard discrepancy on the canonical router (§11.1/§11.2 below,
+kept as ground truth); the orchestrator + user chose the **hybrid** resolution
+(§11.3). The diagnostic facts are retained because they are still true and explain
+*why* the hybrid is the honest choice.
 
 ### 11.1 The canonical deployed router is NOT byte-identical to vendored swap-vm 0.0.6
 
@@ -440,35 +442,56 @@ is a different leaf — hence the underflow.
 > sources. A future pass that re-vendors the matching router version could use it
 > directly instead of the tiering/decay stand-ins.
 
-### 11.3 Why all four fix groups are blocked, and what was NOT done
+### 11.3 The chosen resolution: HYBRID execution + on-chain linkage proof
 
-- **A (canonical router):** cannot bind to it without re-encoding programs against the
-  deployed router's (unknown-source) opcode table. Per the stop-and-flag rule I did
-  **not** silently fall back to the fresh-deploy router. The three fork test files +
-  TraceExporter remain on the fresh-deploy router at the green baseline.
-- **B (quote==swap on Aqua path):** the round-trip is meant to run *through the
-  canonical router*; blocked by A. (It would pass trivially on the fresh-deploy router,
-  but that is not what was asked.)
-- **C (CoreInvariants on canonical router):** same — the invariants are to be asserted
-  against the strategy executed on the canonical router; blocked by A.
-- **D (trace `registers` + `metadata.quoteEqualsSwap`):** the regenerated traces are to
-  come from execution on the canonical router; blocked by A.
+The orchestrator + user picked **option 3 (hybrid)**: keep executing swaps on the
+fresh-deployed 0.0.6 `AquaSwapVMRouter` (the pinned, reproducible stateless engine)
+and ship liquidity into the SAME live Aqua singleton the canonical router uses, then
+ADD a read-only on-chain test that proves the linkage honestly. Why hybrid (not
+re-vendoring): 0.0.6 is the only published tag and `main`'s AquaOpcodes table is
+byte-identical to it — the deployed build is unpublished, so there is no obtainable
+source whose program bytes execute on the deployed router. Re-vendoring would mean
+guessing/reconstructing unpublished bytecode; the hybrid keeps everything pinned and
+reproducible while still anchoring on the real live deployment.
 
-### 11.4 Options for the orchestrator (pick one, then unblock B/C/D)
+**What is shared vs self-deployed.** The *liquidity layer* is the real canonical Aqua
+(`0x499943E7…6d31`) — the exact singleton the deployed router's `AQUA()` returns — so
+our `ship`/`safeBalances`/`dock` already touch the live deployment. Only the
+*stateless execution engine* (the SwapVM router that decodes program bytes and prices
+the trade) is self-deployed from pinned 0.0.6.
 
-1. **Re-vendor the matching router version.** Identify the deployed router's swap-vm
-   release (the one with `_progressiveFeeInXD` at byte 24 / shifted table) and vendor
-   THAT `AquaOpcodes`/router source over RAW github. Our builders re-resolve opcode
-   bytes by function pointer via `ProgramBuilder.findOpcode`, so re-vendoring the right
-   opcode table auto-fixes the emitted bytes — no builder edits needed — and A→D all
-   proceed against the real deployed router.
-2. **Accept the fresh-deploy router** as the canonical execution surface for the demo
-   (it IS the same swap-vm protocol, same Aqua, just self-deployed) and explicitly
-   relax item 1. Then B/C/D run on the fresh-deploy router and pass. Lower judging
-   score for "uses the live deployment," but fully honest and green today.
-3. **Hybrid:** keep fresh-deploy for execution (A/B/C/D green now) AND add one
-   read-only assertion that the deployed router exists with matching `AQUA()` and a
-   `ProgressiveFee` opcode, documenting the version gap — captures the "live deployment"
-   narrative without running unverifiable re-encoded bytes through it.
+**On-chain proof — `test/CanonicalRouterLinkage.t.sol`** asserts, on the fork at block
+25,300,000:
+1. `extcodesize(0x8fDD04…0958f) > 0` — the canonical router is real (measured 22,640).
+2. `IRouterAqua(canonical).AQUA() == 0x499943E7…6d31` — the deployed router uses the
+   SAME Aqua we ship into (the load-bearing linkage).
+3. A fresh 0.0.6 `AquaSwapVMRouter` self-deploy has codesize **18,142** ≠ the deployed
+   **22,640** — proving they are different builds (the dev-preview version skew) — and
+   that fresh router's `AQUA()` also equals `0x499943E7…6d31`, so the ONLY difference
+   between the two execution surfaces is the build, not the liquidity layer.
 
-No tolerances were loosened and no pass was faked. Baseline remains 13/13 green.
+This captures the "uses the live deployment" narrative without running unverifiable
+re-encoded bytes through the deployed router.
+
+### 11.4 With A resolved, B/C/D proceed on the hybrid surface
+
+- **B (quote==swap round-trip):** the happy-path WETH→USDC fork test and a composed
+  fork test now call `router.quote(...)` before the real `swap(...)` with identical
+  taker data and `assertEq` the `(amountIn, amountOut)` pair. `AquaLabTaker` got a
+  `quote()` passthrough. Runs on the fresh-deploy router + live Aqua.
+- **C (CoreInvariants):** `test/invariants/CoreInvariants.t.sol` +
+  `ExactInOutSymmetry.t.sol` vendored from 0.0.6 into `lib/swap-vm/test/invariants/`;
+  `test/ComposedInvariants.t.sol` inherits `CoreInvariants` and runs
+  `assertAllInvariantsWithConfig(...)` against the composed strategy on the
+  fresh-deploy router + live Aqua. **Additivity is configured OFF**
+  (`skipAdditivity = true`) with justification: under `_decayXD` the price is
+  path-dependent by design — a single swap(A+B) and a split swap(A)+swap(B) leave
+  different decay offsets, so additivity (single ≥ split) is not an invariant for a
+  decay-protected pool. Every other invariant (symmetry, quote/swap consistency,
+  monotonicity, rounding-favors-maker, balance-sufficiency) runs and passes.
+- **D (trace `registers` + `metadata.quoteEqualsSwap`):** the schema + TraceExporter
+  now emit the 5 `SwapRegisters` after each instruction and a top-level
+  `metadata.quoteEqualsSwap` boolean (from a real quote==swap check inside the
+  exporter). All three fixtures regenerated via the §10.3 command and validate.
+
+No tolerances were loosened and no pass was faked. Baseline + new tests all green.
