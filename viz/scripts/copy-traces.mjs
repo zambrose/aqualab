@@ -20,8 +20,9 @@ const tracesDir = join(repoRoot, 'traces');
 const fixturesDir = join(scriptDir, '..', 'fixtures');
 
 const COPIES = [
-  { src: 'trace-small-swap.json', dst: 'trace-small-swap.fixture.json' },
-  { src: 'trace-large-swap.json', dst: 'trace-large-swap.fixture.json' },
+  { src: 'trace-small-swap.json',       dst: 'trace-small-swap.fixture.json' },
+  { src: 'trace-large-swap.json',       dst: 'trace-large-swap.fixture.json' },
+  { src: 'trace-two-swap-decay.json',   dst: 'trace-two-swap-decay.fixture.json' },
 ];
 
 let ok = true;

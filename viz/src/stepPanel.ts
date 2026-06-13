@@ -35,9 +35,18 @@ function renderParams(params: OpcodeParams): string {
     const decayFactor = p.decayPeriodSeconds > 0
       ? Math.max(0, 1 - p.elapsedSeconds / p.decayPeriodSeconds)
       : 1;
-    rows.push(['decay (linear 1-t/T)', decayFactor.toFixed(4)]);
-    rows.push(['offsetIn (current)', p.currentOffsetIn]);
-    rows.push(['offsetOut (current)', p.currentOffsetOut]);
+    const isDecayActive = p.elapsedSeconds > 0 && p.elapsedSeconds < p.decayPeriodSeconds;
+    rows.push(['decay factor (1-t/T)', isDecayActive
+      ? `${decayFactor.toFixed(4)}  ← active MEV protection`
+      : decayFactor.toFixed(4)]);
+    rows.push(['offsetIn (raw, tokenIn units)',
+      BigInt(p.currentOffsetIn) > 0n
+        ? `${p.currentOffsetIn} (non-zero — adds virtual depth to tokenIn)`
+        : '0 (no prior same-direction trade)']);
+    rows.push(['offsetOut (raw, tokenOut units)',
+      BigInt(p.currentOffsetOut) > 0n
+        ? `${p.currentOffsetOut} (non-zero — reduces virtual tokenOut supply)`
+        : '0 (no prior same-direction trade)']);
     rows.push(['vReserveA before→after',
       `${(Number(p.virtualReservesBefore.reserveA) / 1e18).toFixed(4)} → ${(Number(p.virtualReservesAfter.reserveA) / 1e18).toFixed(4)} WETH`]);
     rows.push(['vReserveB before→after',

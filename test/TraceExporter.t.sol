@@ -88,6 +88,12 @@ contract TraceExporter is Test {
         _exportLargeSwap();
     }
 
+    /// @notice Export the two-swap decay trace (decay-affected reverse swap).
+    ///         Run with `forge test --match-test test_ExportTwoSwapDecay -v`
+    function test_ExportTwoSwapDecay() public {
+        _exportTwoSwapDecay();
+    }
+
     // ---------------------------------------------------------------------------
     // Small swap: 1 WETH → USDC, constant-product + flat fee + decay
     // ---------------------------------------------------------------------------
@@ -297,7 +303,6 @@ contract TraceExporter is Test {
             aqua.safeBalances(maker, address(router), strategyHash, WETH, USDC);
 
         uint256 spotBefore_raw = rOut0 * 1e12 / rIn0;
-        uint256 spotAfter_raw  = poolUsdcAfter * 1e12 / poolWethAfter;
         // After concentrated swap, virtual spot from post-swap balances
         uint256 L2 = _computeL(poolUsdcAfter, poolWethAfter, SQRT_MIN, SQRT_MAX);
         uint256 vIn2  = poolWethAfter + Math.mulDiv(L2, SQRT_MIN, ONE, Math.Rounding.Ceil);
@@ -337,6 +342,367 @@ contract TraceExporter is Test {
 
         vm.writeFile("./traces/trace-large-swap.json", trace);
         console.log("Written: ./traces/trace-large-swap.json");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Two-swap decay trace: WETH→USDC first, then USDC→WETH with live decay offset
+    //
+    // The first (un-traced) swap is WETH→USDC. Decay._decayXD writes offsets after
+    // that swap keyed as _offsets[hash][WETH][false] and _offsets[hash][USDC][true].
+    //
+    // The SECOND (traced) swap is USDC→WETH. That swap's _decayXD reads:
+    //   _offsets[hash][USDC][true]  → added to balanceIn (USDC)
+    //   _offsets[hash][WETH][false] → subtracted from balanceOut (WETH)
+    //
+    // By warping 1200 s into the 3600 s decay period the offsets are 2/3 of their
+    // initial value (timeLeft = 3600 − 1200 = 2400, factor = 2400/3600 = 2/3).
+    // The _decayXD step in the trace therefore shows:
+    //   elapsedSeconds   = 1200
+    //   decayFactor      ≈ 0.6667  (strictly between 0 and 1)
+    //   currentOffsetIn  ≈ out1 * 2400/3600   (USDC units, non-zero)
+    //   currentOffsetOut ≈ 5e18  * 2400/3600  (WETH units, non-zero)
+    // ---------------------------------------------------------------------------
+
+    function _exportTwoSwapDecay() internal {
+        uint256 amountIn1 = 5 ether;       // first WETH→USDC (un-traced, sets offsets)
+        uint256 amountIn2 = 5_000 * 1e6;   // second USDC→WETH (traced), ~1.67 WETH at 3000 USDC/WETH
+        uint64 salt = 903;
+        uint256 ELAPSED = 1200;            // seconds between the two swaps (1/3 of period)
+
+        ComposedStrategyBuilder.PoolParams memory params = ComposedStrategyBuilder.PoolParams({
+            salt: salt,
+            feeBps: FEE_BPS,
+            decayPeriod: DECAY_PERIOD,
+            curve: ComposedStrategyBuilder.Curve.ConstantProduct,
+            sqrtPriceMin: 0,
+            sqrtPriceMax: 0
+        });
+
+        (ISwapVM.Order memory order, bytes32 strategyHash) = _shipPool(params);
+
+        // -----------------------------------------------------------------------
+        // Swap 1: 5 WETH → USDC  (NOT traced; just sets the decay offsets)
+        // -----------------------------------------------------------------------
+        deal(WETH, address(taker), amountIn1);
+        taker.approveRouter(WETH, amountIn1);
+        (, uint256 out1) = taker.swap(order, WETH, USDC, amountIn1, _takerData());
+        console.log("TWO-SWAP: swap1 WETH->USDC, amountIn=%d, out1=%d", amountIn1, out1);
+
+        // After swap1, Decay stored:
+        //   _offsets[hash][WETH][false] = amountIn1   (= 5 WETH)
+        //   _offsets[hash][USDC][true]  = out1         (= actual USDC output)
+        // These are the offsets that swap2 (USDC→WETH) will READ.
+
+        // Pool real reserves after swap1
+        (uint256 poolWethMid, uint256 poolUsdcMid) =
+            aqua.safeBalances(maker, address(router), strategyHash, WETH, USDC);
+        console.log("Pool after swap1: WETH=%d, USDC=%d", poolWethMid, poolUsdcMid);
+
+        // -----------------------------------------------------------------------
+        // Advance time: 1200 s into the 3600 s decay period
+        // -----------------------------------------------------------------------
+        vm.warp(block.timestamp + ELAPSED);
+        uint256 timeLeft = DECAY_PERIOD - ELAPSED;   // = 2400
+
+        // -----------------------------------------------------------------------
+        // Compute the DECAYED offsets that swap2 will see.
+        // getOffset returns: storedOffset * timeLeft / decayPeriod
+        // For USDC→WETH: tokenIn=USDC, tokenOut=WETH
+        //   offsetIn  = _offsets[hash][USDC][true]  = out1  (written by swap1)
+        //   offsetOut = _offsets[hash][WETH][false] = amountIn1 (written by swap1)
+        // After 1200 s of decay (timeLeft = 2400):
+        //   currentOffsetIn  = out1    * 2400 / 3600
+        //   currentOffsetOut = amountIn1 * 2400 / 3600
+        // -----------------------------------------------------------------------
+        uint256 currentOffsetIn  = out1 * timeLeft / DECAY_PERIOD;
+        uint256 currentOffsetOut = amountIn1 * timeLeft / DECAY_PERIOD;
+
+        // Decay factor = timeLeft / period = 2400 / 3600
+        // For display: decayFactor = 1 - ELAPSED/DECAY_PERIOD = 1 - 1200/3600 = 2/3
+
+        // -----------------------------------------------------------------------
+        // Swap 2: USDC → WETH  (TRACED)
+        //
+        // Virtual reserves seen by the AMM:
+        //   balanceIn  (USDC) = poolUsdcMid + currentOffsetIn
+        //   balanceOut (WETH) = poolWethMid - currentOffsetOut
+        // -----------------------------------------------------------------------
+        uint256 vIn_decay2  = poolUsdcMid + currentOffsetIn;
+        uint256 vOut_decay2 = poolWethMid - currentOffsetOut;
+
+        // Fee step
+        uint256 feeAmount2  = Math.ceilDiv(amountIn2 * FEE_BPS, BPS);
+        uint256 netAmountIn2 = amountIn2 - feeAmount2;
+
+        // xycSwap (constant-product, exact-in):
+        uint256 tracedOut2  = netAmountIn2 * vOut_decay2 / (vIn_decay2 + netAmountIn2);
+
+        // Execute swap2 on-chain and measure real output
+        deal(USDC, address(taker), amountIn2);
+        taker.approveRouter(USDC, amountIn2);
+
+        uint256 takerWethBefore2 = IERC20(WETH).balanceOf(address(taker));
+        uint256 takerUsdcBefore2 = IERC20(USDC).balanceOf(address(taker));
+        uint256 makerWethBefore2 = IERC20(WETH).balanceOf(maker);
+        uint256 makerUsdcBefore2 = IERC20(USDC).balanceOf(maker);
+
+        (, uint256 realOut2) = taker.swap(order, USDC, WETH, amountIn2, _takerData());
+
+        uint256 takerWethAfter2 = IERC20(WETH).balanceOf(address(taker));
+        uint256 takerUsdcAfter2 = IERC20(USDC).balanceOf(address(taker));
+        uint256 makerWethAfter2 = IERC20(WETH).balanceOf(maker);
+        uint256 makerUsdcAfter2 = IERC20(USDC).balanceOf(maker);
+
+        console.log("TWO-SWAP: swap2 USDC->WETH, amountIn=%d, realOut=%d", amountIn2, realOut2);
+        console.log("TWO-SWAP: tracedOut2=%d, realOut2=%d", tracedOut2, realOut2);
+        console.log("TWO-SWAP: currentOffsetIn=%d, currentOffsetOut=%d", currentOffsetIn, currentOffsetOut);
+
+        // Assert traced output matches real measured output
+        assertEq(tracedOut2, realOut2,
+            "TWO-SWAP: traced amountOut (swap2) must equal real on-chain measured amountOut");
+
+        // -----------------------------------------------------------------------
+        // Post-swap2 reserves
+        // -----------------------------------------------------------------------
+        (uint256 poolWethAfter2, uint256 poolUsdcAfter2) =
+            aqua.safeBalances(maker, address(router), strategyHash, WETH, USDC);
+
+        // Spot price for USDC→WETH swap: we track in units of tokenB/tokenA = USDC/WETH
+        // Before swap2: the pool has poolWethMid/poolUsdcMid (real reserves from swap1 end)
+        // The virtual reserves for swap2 price are vIn_decay2 (USDC) / vOut_decay2 (WETH)
+        // spotBeforeSwap2: USDC per WETH using real reserves after swap1
+        uint256 spotBefore2 = poolUsdcMid * 1e12 / poolWethMid;
+        // After swap2: USDC per WETH using real reserves after swap2
+        uint256 spotAfter2  = poolUsdcAfter2 * 1e12 / poolWethAfter2;
+
+        // Virtual spot before swap2 (with decay offsets applied):
+        // USDC per WETH = virtualUSDC / virtualWETH * 1e12
+        uint256 spotVirtBefore2 = vIn_decay2 * 1e12 / vOut_decay2;
+
+        // swapPointX: normalized position on curve (amountIn2 / (amountIn2 + poolUsdcMid))
+        uint256 poolSpotXnum2 = (poolUsdcMid + amountIn2) * 1000 / (poolUsdcMid * 2 + amountIn2);
+
+        string memory trace = _buildTrace(
+            unicode"Decay Demo — USDC→WETH follow-up swap with live 2/3 decay offset from prior 5 WETH trade",
+            strategyHash,
+            FORK_BLOCK,
+            amountIn2,
+            realOut2,
+            _buildTwoSwapDecaySteps(
+                amountIn2,
+                realOut2,
+                feeAmount2,
+                netAmountIn2,
+                ELAPSED,
+                timeLeft,
+                currentOffsetIn,
+                currentOffsetOut,
+                poolWethMid, poolUsdcMid,
+                vIn_decay2, vOut_decay2,
+                poolWethAfter2, poolUsdcAfter2,
+                spotBefore2,
+                spotVirtBefore2,
+                spotAfter2,
+                poolSpotXnum2,
+                takerWethBefore2, takerUsdcBefore2,
+                takerWethAfter2, takerUsdcAfter2,
+                makerWethBefore2, makerUsdcBefore2,
+                makerWethAfter2, makerUsdcAfter2
+            )
+        );
+
+        // Override metadata direction: this is B_TO_A (USDC→WETH = tokenB→tokenA)
+        // We need to patch the swapDirection field in the trace
+        // NOTE: _buildTrace always emits A_TO_B. For this trace we must emit B_TO_A.
+        // We do a simple string replacement on the generated trace.
+        // (The schema allows "B_TO_A"; we need to correct the direction.)
+        bytes memory traceBytes = bytes(trace);
+        bytes memory findStr  = bytes('"swapDirection":"A_TO_B"');
+        bytes memory replStr  = bytes('"swapDirection":"B_TO_A"');
+        // Manual replace: find the substring and overwrite it
+        for (uint256 i = 0; i + findStr.length <= traceBytes.length; i++) {
+            bool found = true;
+            for (uint256 j = 0; j < findStr.length; j++) {
+                if (traceBytes[i + j] != findStr[j]) { found = false; break; }
+            }
+            if (found) {
+                for (uint256 j = 0; j < replStr.length; j++) {
+                    traceBytes[i + j] = replStr[j];
+                }
+                break;
+            }
+        }
+        trace = string(traceBytes);
+
+        vm.writeFile("./traces/trace-two-swap-decay.json", trace);
+        console.log("Written: ./traces/trace-two-swap-decay.json");
+
+        // Sanity: decay factor must be strictly between 0 and 1
+        // decayFactor = timeLeft / DECAY_PERIOD = 2400/3600
+        assertGt(currentOffsetIn, 0, "TWO-SWAP: offsetIn must be non-zero");
+        assertGt(currentOffsetOut, 0, "TWO-SWAP: offsetOut must be non-zero");
+        assertGt(timeLeft, 0, "TWO-SWAP: timeLeft > 0 (decay not fully expired)");
+        assertLt(timeLeft, DECAY_PERIOD, "TWO-SWAP: timeLeft < period (decay not zero)");
+        assertLt(ELAPSED, DECAY_PERIOD, "TWO-SWAP: elapsed < period (decay not fully expired)");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Two-swap decay steps builder
+    // Steps: [0] _salt, [1] _decayXD (NON-ZERO offsets!), [2] _flatFeeAmountInXD, [3] _xycSwapXD
+    // This is the SECOND swap (USDC→WETH) after a 1200-second delay.
+    // Tokens in the trace: tokenA=WETH, tokenB=USDC (matching the schema)
+    // But the swap direction is B_TO_A (USDC→WETH), so amountIn is in USDC (tokenB).
+    // ---------------------------------------------------------------------------
+
+    function _buildTwoSwapDecaySteps(
+        uint256 amountIn2,
+        uint256 realOut2,
+        uint256 feeAmount2,
+        uint256 netAmountIn2,
+        uint256 elapsed,
+        uint256 timeLeft,
+        uint256 currentOffsetIn,
+        uint256 currentOffsetOut,
+        uint256 poolWethMid, uint256 poolUsdcMid,
+        uint256 vIn_decay2, uint256 vOut_decay2,
+        uint256 poolWethAfter2, uint256 poolUsdcAfter2,
+        uint256 spotBefore2,
+        uint256 spotVirtBefore2,
+        uint256 spotAfter2,
+        uint256 poolSpotXnum2,
+        uint256 takerWethBefore2, uint256 takerUsdcBefore2,
+        uint256 takerWethAfter2, uint256 takerUsdcAfter2,
+        uint256 makerWethBefore2, uint256 makerUsdcBefore2,
+        uint256 makerWethAfter2, uint256 makerUsdcAfter2
+    ) internal pure returns (string memory) {
+        uint256 humanFeeBps = uint256(FEE_BPS) * 10_000 / BPS;
+
+        // decayFactor = timeLeft / DECAY_PERIOD (as fraction * 10000 for display)
+        // e.g. 2400/3600 = 6667/10000 = 0.6667
+        uint256 decayFactorNum = timeLeft * 10000 / DECAY_PERIOD; // e.g. 6667
+
+        // Step 0: _salt
+        string memory step0 = _buildStep(
+            0, "_salt",
+            string.concat("Uniqueness salt: pure no-op. Pool uses salt=903 to distinguish from other pools."),
+            string.concat('{"type":"_salt","salt":"903"}'),
+            _balSnap(
+                _uint(makerWethBefore2), _uint(makerUsdcBefore2),
+                _uint(takerWethBefore2), _uint(takerUsdcBefore2)
+            ),
+            _balSnap(
+                _uint(makerWethBefore2), _uint(makerUsdcBefore2),
+                _uint(takerWethBefore2), _uint(takerUsdcBefore2)
+            ),
+            _curveState(
+                _uint(poolWethMid), _uint(poolUsdcMid),
+                _uint(poolWethMid), _uint(poolUsdcMid),
+                spotBefore2, 0, "null", "null"
+            )
+        );
+
+        // Step 1: _decayXD — NON-ZERO offsets from prior 5 WETH→USDC swap
+        // This is the key "MEV protection" step that shows decay in action.
+        // Prior swap1 (WETH→USDC) stored offsets:
+        //   _offsets[hash][WETH][false] = 5e18   (stored as amountIn1)
+        //   _offsets[hash][USDC][true]  = out1    (stored as amountOut of swap1)
+        // This swap2 (USDC→WETH) reads those as:
+        //   offsetIn  = _offsets[hash][USDC][true]  decayed by 1200s → currentOffsetIn
+        //   offsetOut = _offsets[hash][WETH][false] decayed by 1200s → currentOffsetOut
+        // Virtual reserves:
+        //   vBalanceIn  (USDC) = poolUsdcMid + currentOffsetIn
+        //   vBalanceOut (WETH) = poolWethMid - currentOffsetOut
+        string memory step1 = _buildStep(
+            1, "_decayXD",
+            string.concat(
+                "MEV decay: period=", _uint(DECAY_PERIOD), "s; elapsed=", _uint(elapsed),
+                "s (decay factor=", _uint(decayFactorNum / 100), ".", _uint(decayFactorNum % 100),
+                "%). Prior 5 WETH trade offset reduces effective WETH available to this buyer."
+            ),
+            string.concat(
+                '{"type":"_decayXD","decayPeriodSeconds":', _uint(DECAY_PERIOD),
+                ',"elapsedSeconds":', _uint(elapsed),
+                ',"currentOffsetIn":"', _uint(currentOffsetIn), '"',
+                ',"currentOffsetOut":"', _uint(currentOffsetOut), '"',
+                ',"virtualReservesBefore":{"reserveA":"', _uint(poolWethMid), '","reserveB":"', _uint(poolUsdcMid), '"}',
+                ',"virtualReservesAfter":{"reserveA":"', _uint(vOut_decay2), '","reserveB":"', _uint(vIn_decay2), '"}}'
+            ),
+            // ERC-20 balances unchanged (decay modifies virtual registers only)
+            _balSnap(
+                _uint(makerWethBefore2), _uint(makerUsdcBefore2),
+                _uint(takerWethBefore2), _uint(takerUsdcBefore2)
+            ),
+            _balSnap(
+                _uint(makerWethBefore2), _uint(makerUsdcBefore2),
+                _uint(takerWethBefore2), _uint(takerUsdcBefore2)
+            ),
+            // Virtual reserves now show the decay-adjusted view
+            // realReserves = poolWethMid/poolUsdcMid; virtualReserves = decay-adjusted
+            // In the schema, reserveA=WETH, reserveB=USDC
+            // After decay: virtual WETH (tokenOut) = vOut_decay2; virtual USDC (tokenIn) = vIn_decay2
+            _curveState(
+                _uint(poolWethMid), _uint(poolUsdcMid),
+                _uint(vOut_decay2), _uint(vIn_decay2),
+                spotVirtBefore2, 0, "null", "null"
+            )
+        );
+
+        // Step 2: _flatFeeAmountInXD
+        // amountIn2 is in USDC (tokenB), feeAmount2 in USDC
+        string memory step2 = _buildStep(
+            2, "_flatFeeAmountInXD",
+            string.concat("LP fee: ", _uint(humanFeeBps), " bps (0.30%) applied to USDC amountIn. Net input to AMM = amountIn - ceil(amountIn * feeBps / 1e9)."),
+            string.concat(
+                '{"type":"_flatFeeAmountInXD","feeBps":', _uint(FEE_BPS),
+                ',"humanFeeBps":', _uint(humanFeeBps),
+                ',"grossAmountIn":"', _uint(amountIn2), '"',
+                ',"feeAmount":"', _uint(feeAmount2), '"',
+                ',"netAmountIn":"', _uint(netAmountIn2), '"}'
+            ),
+            _balSnap(
+                _uint(makerWethBefore2), _uint(makerUsdcBefore2),
+                _uint(takerWethBefore2), _uint(takerUsdcBefore2)
+            ),
+            _balSnap(
+                _uint(makerWethBefore2), _uint(makerUsdcBefore2),
+                _uint(takerWethBefore2), _uint(takerUsdcBefore2)
+            ),
+            _curveState(
+                _uint(poolWethMid), _uint(poolUsdcMid),
+                _uint(vOut_decay2), _uint(vIn_decay2),
+                spotVirtBefore2, humanFeeBps, "null", "null"
+            )
+        );
+
+        // Step 3: _xycSwapXD
+        // amountOut is in WETH; virtualBalanceIn is USDC, virtualBalanceOut is WETH
+        string memory step3 = _buildStep(
+            3, "_xycSwapXD",
+            string.concat("Constant-product AMM leaf: amountOut = netAmountIn * vOut / (vIn + netAmountIn) = ", _uint(realOut2), " WETH (decay-penalized vs no-decay price)"),
+            string.concat(
+                '{"type":"_xycSwapXD","virtualBalanceIn":"', _uint(vIn_decay2), '"',
+                ',"virtualBalanceOut":"', _uint(vOut_decay2), '"',
+                ',"netAmountIn":"', _uint(netAmountIn2), '"',
+                ',"amountOut":"', _uint(realOut2), '"}'
+            ),
+            _balSnap(
+                _uint(makerWethBefore2), _uint(makerUsdcBefore2),
+                _uint(takerWethBefore2), _uint(takerUsdcBefore2)
+            ),
+            // After: taker sent USDC, received WETH; maker received USDC, paid WETH
+            _balSnap(
+                _uint(makerWethAfter2), _uint(makerUsdcAfter2),
+                _uint(takerWethAfter2), _uint(takerUsdcAfter2)
+            ),
+            _curveState(
+                _uint(poolWethAfter2), _uint(poolUsdcAfter2),
+                _uint(poolWethAfter2), _uint(poolUsdcAfter2),
+                spotAfter2, humanFeeBps, "null",
+                _uintFrac(poolSpotXnum2, 1000)
+            )
+        );
+
+        return string.concat(step0, ",", step1, ",", step2, ",", step3);
     }
 
     // ---------------------------------------------------------------------------
