@@ -144,7 +144,7 @@
         "params": {
           "type": "object",
           "description": "Decoded opcode parameters — shape varies by opcode (see below).",
-          "oneOf": [
+          "anyOf": [
             { "$ref": "#/$defs/paramsBalanceSetup" },
             { "$ref": "#/$defs/paramsXycConcentrateGrowLiquidityXD" },
             { "$ref": "#/$defs/paramsProgressiveFeeInXD" },

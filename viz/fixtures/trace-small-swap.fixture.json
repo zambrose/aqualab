@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "metadata": {
     "label": "Small Swap — 0.1 WETH → USDC",
-    "strategyHash": "0xa3b4c5d6e7f8091011121314151617181920212223242526272829303132333435",
+    "strategyHash": "0xa3b4c5d6e7f80910111213141516171819202122232425262728293031323334",
     "blockNumber": 20145678,
     "txHash": "0x0000000000000000000000000000000000000000000000000000000000000001",
     "tokenA": {
@@ -27,8 +27,14 @@
       "description": "Initialise maker and taker virtual balances before executing the strategy.",
       "params": {
         "type": "BALANCE_SETUP",
-        "makerDeposit": { "token": "tokenA", "amount": "100000000000000000" },
-        "takerDeposit": { "token": "tokenB", "amount": "300000000000" }
+        "makerDeposit": {
+          "token": "tokenA",
+          "amount": "100000000000000000"
+        },
+        "takerDeposit": {
+          "token": "tokenB",
+          "amount": "300000000000"
+        }
       },
       "balancesBefore": {
         "makerTokenA": "0",
@@ -51,7 +57,7 @@
           "reserveA": "1000000000000000000000",
           "reserveB": "3000000000000"
         },
-        "spotPriceAInB": 3000.00,
+        "spotPriceAInB": 3000,
         "feeBps": 0,
         "concentratedRange": null,
         "swapPointX": null
@@ -96,8 +102,8 @@
         "spotPriceAInB": 2998.51,
         "feeBps": 0,
         "concentratedRange": {
-          "priceLower": 2700.00,
-          "priceUpper": 3300.00,
+          "priceLower": 2700,
+          "priceUpper": 3300,
           "isInRange": true
         },
         "swapPointX": 0.503
@@ -138,8 +144,8 @@
         "spotPriceAInB": 2998.51,
         "feeBps": 5,
         "concentratedRange": {
-          "priceLower": 2700.00,
-          "priceUpper": 3300.00,
+          "priceLower": 2700,
+          "priceUpper": 3300,
           "isInRange": true
         },
         "swapPointX": 0.503
@@ -187,8 +193,8 @@
         "spotPriceAInB": 2997.14,
         "feeBps": 5,
         "concentratedRange": {
-          "priceLower": 2700.00,
-          "priceUpper": 3300.00,
+          "priceLower": 2700,
+          "priceUpper": 3300,
           "isInRange": true
         },
         "swapPointX": 0.503
