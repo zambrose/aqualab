@@ -1,0 +1,30 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib", "node_modules"]
+solc_version = "0.8.30"
+optimizer = true
+optimizer_runs = 700
+via_ir = true
+fs_permissions = [
+    { access = "read-write", path = "./traces" },
+    { access = "read-write", path = "./out" },
+]
+
+# Pinned mainnet fork block for deterministic, cache-friendly fork tests.
+# Live Aqua deployment (0x499943e74fb0ce105688beee8ef2abec5d936d31) has bytecode here.
+[profile.default.optimizer_details]
+yul = true
+
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
+
+[fmt]
+single_line_statement_blocks = "multi"
+multiline_func_header = "all"
+override_spacing = false
+bracket_spacing = true
+int_types = "long"
+number_underscore = "thousands"

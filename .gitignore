@@ -5,10 +5,19 @@
 
 # Foundry
 /cache/
+cache/
 /out/
+out/
 /broadcast/
-/lib/
+
+# Foundry libs: ignore everything under lib/ by default, but the swap-vm and
+# aqua protocol sources are VENDORED (the GitHub API is blocked in CI so
+# `forge install` cannot re-fetch them) and therefore tracked.
+/lib/*
+!/lib/swap-vm/
+!/lib/aqua/
 
 # Node
 node_modules/
+package-lock.json
 dist/
