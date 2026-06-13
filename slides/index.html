@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AquaLab — Demo Deck</title>
+<style>
+  /* Self-contained: no external fonts/CDN, so the deck works offline at the booth. */
+  :root {
+    --bg:#0d1117; --bg2:#161b22; --bg3:#21262d; --border:#30363d;
+    --text:#e6edf3; --dim:#8b949e; --blue:#388bfd; --purple:#8957e5;
+    --green:#56d364; --orange:#ffa657; --red:#f78166; --teal:#79c0ff;
+    --mono:'JetBrains Mono','Fira Code','Cascadia Code','Consolas',monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { height:100%; }
+  body {
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  #deck { height:100vh; width:100vw; position:relative; }
+  .slide {
+    position:absolute; inset:0; display:none;
+    flex-direction:column; justify-content:center;
+    padding:6vh 9vw; opacity:0; transition:opacity .25s ease;
+  }
+  .slide.active { display:flex; opacity:1; }
+  .slide.active .reveal { animation:rise .45s ease both; }
+  @keyframes rise { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
+
+  .kicker { font-family:var(--mono); font-size:.82rem; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--teal); margin-bottom:1.1rem; }
+  h1 { font-size:4.2rem; line-height:1.04; font-weight:800; letter-spacing:-.02em; }
+  h1 .accent { color:var(--blue); }
+  h2 { font-size:2.5rem; line-height:1.1; font-weight:750; letter-spacing:-.01em; margin-bottom:1.6rem; }
+  h2 .accent { color:var(--blue); }
+  .sub { font-size:1.35rem; color:var(--dim); margin-top:1.4rem; max-width:46ch; line-height:1.5; }
+  p.lead { font-size:1.4rem; line-height:1.55; max-width:60ch; color:var(--text); }
+  .dim { color:var(--dim); }
+  .mono { font-family:var(--mono); }
+  strong { color:var(--text); font-weight:700; }
+
+  ul.points { list-style:none; display:flex; flex-direction:column; gap:1.05rem; margin-top:.4rem; }
+  ul.points li { font-size:1.45rem; line-height:1.4; padding-left:2rem; position:relative; max-width:62ch; }
+  ul.points li::before { content:'▸'; position:absolute; left:0; color:var(--blue); }
+  ul.points li small { display:block; font-size:1.02rem; color:var(--dim); margin-top:.25rem; padding-left:0; }
+
+  .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:1.2rem; margin-top:1rem; }
+  .card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:1.5rem 1.4rem; }
+  .card .ico { font-size:1.7rem; }
+  .card h3 { font-size:1.25rem; margin:.7rem 0 .5rem; }
+  .card p { color:var(--dim); font-size:1rem; line-height:1.5; }
+  .card.b { border-top:3px solid var(--blue); }
+  .card.g { border-top:3px solid var(--green); }
+  .card.p { border-top:3px solid var(--purple); }
+
+  .pipe { display:flex; flex-direction:column; gap:.7rem; margin-top:.4rem; font-family:var(--mono); }
+  .frame { display:flex; align-items:center; gap:1rem; }
+  .op { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
+    padding:.7rem 1.1rem; font-size:1.15rem; min-width:21rem; }
+  .op .role { color:var(--dim); font-size:.92rem; }
+  .op.salt { border-left:4px solid var(--purple); }
+  .op.decay { border-left:4px solid var(--teal); }
+  .op.fee { border-left:4px solid var(--orange); }
+  .op.amm { border-left:4px solid var(--green); }
+  .nest { color:var(--dim); font-size:1.05rem; }
+  .nest b { color:var(--teal); }
+
+  table.t { border-collapse:collapse; margin-top:.4rem; font-size:1.06rem; width:100%; max-width:62rem; }
+  table.t th, table.t td { text-align:left; padding:.7rem .9rem; border-bottom:1px solid var(--border); vertical-align:top; }
+  table.t th { color:var(--dim); font-weight:600; font-size:.92rem; text-transform:uppercase; letter-spacing:.05em; }
+  table.t td.op-c { font-family:var(--mono); color:var(--teal); white-space:nowrap; }
+  table.t tr:last-child td { border-bottom:none; }
+
+  .stat-row { display:flex; gap:2.5rem; margin-top:1.6rem; flex-wrap:wrap; }
+  .stat { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:1.3rem 1.6rem; min-width:13rem; }
+  .stat .n { font-size:2.5rem; font-weight:800; font-family:var(--mono); }
+  .stat .n.green { color:var(--green); } .stat .n.blue { color:var(--blue); } .stat .n.orange { color:var(--orange); }
+  .stat .l { color:var(--dim); font-size:.98rem; margin-top:.3rem; }
+
+  pre { background:var(--bg2); border:1px solid var(--border); border-radius:10px;
+    padding:1.3rem 1.5rem; font-family:var(--mono); font-size:1.08rem; line-height:1.7;
+    color:var(--text); max-width:64rem; overflow:auto; }
+  pre .c { color:var(--dim); }
+  pre .g { color:var(--green); }
+  pre .o { color:var(--orange); }
+  pre .b { color:var(--teal); }
+
+  .callout { background:#1f6feb14; border:1px solid var(--blue); border-left:4px solid var(--blue);
+    border-radius:8px; padding:1.1rem 1.3rem; font-size:1.12rem; line-height:1.5; max-width:62ch; margin-top:1rem; }
+  .callout.warn { background:#ffa65714; border-color:var(--orange); border-left-color:var(--orange); }
+  .callout b { color:var(--text); }
+
+  /* chrome */
+  .bar { position:fixed; bottom:0; left:0; height:4px; background:var(--blue); width:0; transition:width .25s ease; z-index:10; }
+  .counter { position:fixed; bottom:14px; right:20px; font-family:var(--mono); font-size:.8rem; color:var(--dim); z-index:10; }
+  .brand { position:fixed; bottom:12px; left:20px; font-family:var(--mono); font-size:.8rem; color:var(--dim); z-index:10; }
+  .brand b { color:var(--blue); }
+  .hint { position:fixed; top:14px; right:20px; font-family:var(--mono); font-size:.72rem; color:var(--border); z-index:10; }
+
+  /* speaker notes */
+  #notes { position:fixed; inset:auto 0 0 0; background:var(--bg3); border-top:1px solid var(--border);
+    padding:1.1rem 9vw 1.4rem; display:none; z-index:20; max-height:42vh; overflow:auto; }
+  #notes.show { display:block; }
+  #notes h4 { font-family:var(--mono); font-size:.8rem; text-transform:uppercase; letter-spacing:.1em; color:var(--teal); margin-bottom:.6rem; }
+  #notes p, #notes li { font-size:1.02rem; line-height:1.5; color:var(--text); }
+  #notes ul { margin-left:1.2rem; }
+  #notes code { font-family:var(--mono); background:var(--bg); padding:.1rem .4rem; border-radius:4px; color:var(--orange); }
+
+  .title-meta { display:flex; gap:1.2rem; margin-top:2.4rem; flex-wrap:wrap; align-items:center; }
+  .pill { font-family:var(--mono); font-size:.9rem; padding:.45rem .9rem; border:1px solid var(--border);
+    border-radius:999px; color:var(--dim); }
+  .pill b { color:var(--green); }
+</style>
+</head>
+<body>
+<div id="deck">
+
+  <!-- 1 — TITLE -->
+  <section class="slide" data-notes="
+    <h4>Open</h4>
+    <p>One line: <b>AquaLab is a composed 1inch SwapVM strategy on live Aqua, plus a debugger that shows the instruction pipeline executing.</b></p>
+    <ul>
+      <li>Targeting the 1inch <b>Build an Aqua App</b> bounty — direct SwapVM usage scores higher.</li>
+      <li>Everything runs on a <b>mainnet fork</b> against the real deployed Aqua contract — real WETH/USDC moves.</li>
+      <li>Plan: 3 minutes — live <code>forge test</code>, then the visualizer, then why composition wins.</li>
+    </ul>">
+    <div class="reveal kicker">ETHGlobal NY 2026 · 1inch — Build an Aqua App</div>
+    <h1 class="reveal">Aqua<span class="accent">Lab</span></h1>
+    <p class="reveal sub">A composed <strong>SwapVM</strong> strategy on the live <strong>Aqua</strong>
+      deployment — and a visual debugger that steps through the instruction pipeline,
+      balance deltas, and AMM curve, opcode by opcode.</p>
+    <div class="reveal title-meta">
+      <span class="pill">Solidity · Foundry</span>
+      <span class="pill">mainnet fork</span>
+      <span class="pill"><b>12</b> passing fork tests</span>
+      <span class="pill">Vite · TypeScript viz</span>
+    </div>
+  </section>
+
+  <!-- 2 — THE IDEA -->
+  <section class="slide" data-notes="
+    <h4>The pitch (≈25s)</h4>
+    <p>Most AMMs are <b>monolithic</b>: one hardcoded curve. Uniswap is x·y=k forever; to add a fee tier or MEV protection you ship a new contract.</p>
+    <p>SwapVM flips that: a strategy is a <b>program of instructions</b>. You compose primitives — curve, fee, decay — like Lego. That's the bounty's whole thesis, and what we lean into.</p>">
+    <div class="reveal kicker">The idea</div>
+    <h2 class="reveal">AMMs are usually <span class="accent">monolithic</span>.<br/>SwapVM makes them <span class="accent">composable</span>.</h2>
+    <p class="reveal lead">A 1inch SwapVM strategy isn't a fixed curve — it's a <strong>program of
+      instructions</strong>. You assemble a pricing primitive, a fee, and MEV protection
+      as separate opcodes that wrap each other.</p>
+    <div class="reveal callout">We ship a <b>composed position</b> — concentrated liquidity + progressive-cost
+      fee/decay — into the <b>real, deployed Aqua</b> contract, and make every instruction
+      step <b>visible</b>.</div>
+  </section>
+
+  <!-- 3 — WHAT WE BUILT -->
+  <section class="slide" data-notes="
+    <h4>Three parts (≈20s)</h4>
+    <ul>
+      <li><b>Strategy</b> — the composed program, shipped into Aqua.</li>
+      <li><b>Tests</b> — proof it works: real transfers on a fork + fuzzed curve invariants.</li>
+      <li><b>Visualizer</b> — the differentiator: a debugger for the instruction pipeline.</li>
+    </ul>
+    <p>The visualizer renders <b>real exported traces</b>, not mockups — that's the next slide's punchline.</p>">
+    <div class="reveal kicker">What we built</div>
+    <h2 class="reveal">Three parts, all working end-to-end</h2>
+    <div class="reveal cards">
+      <div class="card b"><div class="ico">🧩</div><h3>Composed strategy</h3>
+        <p>salt → decay → fee → AMM, shipped into live Aqua. Concentrated liquidity with a constant-product fallback.</p></div>
+      <div class="card g"><div class="ico">✅</div><h3>Fork tests</h3>
+        <p>12 mainnet-fork tests moving real WETH/USDC through the strategy, plus 5 fuzzed curve-invariant properties.</p></div>
+      <div class="card p"><div class="ico">🔬</div><h3>Trace visualizer</h3>
+        <p>Steps through the real instruction pipeline — decoded opcodes, balance deltas, animated AMM curve.</p></div>
+    </div>
+  </section>
+
+  <!-- 4 — PIPELINE -->
+  <section class="slide" data-notes="
+    <h4>The pipeline (≈30s)</h4>
+    <p>Byte order is <b>outermost wrapper first</b>. Fee and Decay are <b>wrappers</b> — they mutate the swap registers, call runLoop to run the rest, then post-process. The AMM is a <b>leaf</b>.</p>
+    <p>So the bytes literally encode the nesting <b>Decay( Fee( Swap ) )</b>. Ordering is security-enforced: both wrappers assert the swap hasn't priced yet, so you physically cannot put the swap first — it reverts.</p>">
+    <div class="reveal kicker">The instruction pipeline</div>
+    <h2 class="reveal">Four opcodes, <span class="accent">nested</span> by byte order</h2>
+    <div class="reveal pipe">
+      <div class="frame"><div class="op salt"><b>Controls._salt</b><div class="role">unique strategy hash · no-op</div></div></div>
+      <div class="frame"><div class="op decay"><b>Decay._decayXD</b><div class="role">MEV protection · virtual-balance decay</div></div><span class="nest">outer wrapper</span></div>
+      <div class="frame"><div class="op fee"><b>Fee._flatFeeAmountInXD</b><div class="role">LP fee on input amount</div></div><span class="nest">inner wrapper</span></div>
+      <div class="frame"><div class="op amm"><b>XYCConcentrate._xycConcentrateGrowLiquidity2D</b><div class="role">concentrated CPMM · prices the trade</div></div><span class="nest">leaf</span></div>
+    </div>
+    <div class="reveal callout">Bytes encode execution nesting: <b class="mono">Decay( Fee( Swap ) )</b>.
+      Both wrappers assert the swap hasn't priced yet — so the order is <b>enforced by the protocol</b>, not by convention.</div>
+  </section>
+
+  <!-- 5 — OPCODES & WHY -->
+  <section class="slide" data-notes="
+    <h4>Opcodes & why (≈25s)</h4>
+    <p>Hit the <b>why</b>, not the math. Concentrated = deeper book near spot. Fee = accrues to LP. Decay = makes a follow-up trade cost more, so sandwiching is expensive.</p>
+    <p>Don't skip the orange box — it's a credibility point: we read the real opcode table, found the planned opcode doesn't exist, and were honest about it instead of faking it.</p>">
+    <div class="reveal kicker">The opcodes — and why each is there</div>
+    <table class="reveal t">
+      <tr><th>Opcode</th><th>What it does</th><th>Why it's in the program</th></tr>
+      <tr><td class="op-c">_xycConcentrate<br/>GrowLiquidity2D</td><td>Concentrated CPMM — focuses liquidity into a sqrt-price band via virtual reserves.</td><td>Deeper book near spot → better price than plain x·y=k at equal reserves.</td></tr>
+      <tr><td class="op-c">_flatFee<br/>AmountInXD</td><td>Takes a bps fee off the input before the curve prices it.</td><td>LP revenue; the pool keeps full input but pays out less, so k grows extra.</td></tr>
+      <tr><td class="op-c">_decayXD</td><td>A trade leaves an offset that linearly decays over a window.</td><td>MEV / sandwich protection — the attacker's second leg eats the decay penalty.</td></tr>
+      <tr><td class="op-c">_salt</td><td>Pricing no-op.</td><td>Makes otherwise-identical pools ship as distinct immutable Aqua strategies.</td></tr>
+    </table>
+    <div class="reveal callout warn"><b>Honest course-correction:</b> the originally-planned <span class="mono">_progressiveFeeInXD</span>
+      <b>isn't in the Aqua opcode table</b>. We read the real sources, used the opcodes that exist, and realize
+      progressive <i>behavior</i> via fee tiering + decay — documented, not faked.</div>
+  </section>
+
+  <!-- 6 — PROOF / TRANSFERS -->
+  <section class="slide" data-notes="
+    <h4>LIVE: forge test (≈35s) — beat #1</h4>
+    <p>Run it live. While it runs, say: this forks mainnet, ships the strategy into the <b>real</b> Aqua deployment, and a taker swaps — real ERC-20 transfers, asserted on both wallets.</p>
+    <ul>
+      <li>Command: <code>forge test -vv</code></li>
+      <li>Point at the log line: <code>1 WETH → 2970.297 USDC</code> and 12 passing.</li>
+      <li>This is the bounty's hard requirement — on-chain transfers — on screen.</li>
+    </ul>">
+    <div class="reveal kicker">Proof · qualification requirement</div>
+    <h2 class="reveal">Real token transfers through the strategy</h2>
+    <p class="reveal lead">A maker ships the strategy into the <strong>live Aqua deployment</strong>
+      <span class="mono dim">(0x4999…6d31)</span> on a mainnet fork; a taker swaps with visible WETH/USDC
+      balance changes on both sides.</p>
+    <div class="reveal stat-row">
+      <div class="stat"><div class="n green">12</div><div class="l">fork tests passing</div></div>
+      <div class="stat"><div class="n blue">5</div><div class="l">fuzzed curve invariants</div></div>
+      <div class="stat"><div class="n orange">2970.3</div><div class="l">USDC out for 1 WETH (happy path)</div></div>
+    </div>
+    <div class="reveal callout">Live: <span class="mono">forge test -vv</span> — fork the chain, ship, swap, assert the deltas.</div>
+  </section>
+
+  <!-- 7 — VISUALIZER -->
+  <section class="slide" data-notes="
+    <h4>LIVE: the visualizer (≈40s) — beat #2</h4>
+    <p>Open the UI (<code>cd viz &amp;&amp; npm run dev</code>). Step through with arrow keys.</p>
+    <ul>
+      <li>Watch the pipeline highlight each opcode; the balance deltas update; the curve animates.</li>
+      <li>Punchline: <b>these traces are exported from the fork test</b>, and the test asserts the trace's final output equals the on-chain swap — the picture can't lie.</li>
+    </ul>">
+    <div class="reveal kicker">The differentiator</div>
+    <h2 class="reveal">A debugger for the <span class="accent">instruction pipeline</span></h2>
+    <ul class="reveal points">
+      <li>Step forward/back through every opcode actually executed
+        <small>decoded params, maker/taker balance deltas, AMM curve with the concentrated range highlighted</small></li>
+      <li>Renders <strong>real fork-exported traces</strong>, not hand-drawn mockups
+        <small>the exporter runs the real swap and writes JSON validated against a schema</small></li>
+      <li>The trace <strong>can't drift from reality</strong>
+        <small>the test asserts the trace's final output == the on-chain measured <span class="mono">taker.swap()</span> result</small></li>
+    </ul>
+    <div class="reveal callout">Live: <span class="mono">cd viz &amp;&amp; npm run dev</span> → step through the small swap, then switch traces.</div>
+  </section>
+
+  <!-- 8 — SOPHISTICATED BEAT -->
+  <section class="slide" data-notes="
+    <h4>LIVE: the sophisticated beat (≈30s) — beat #3</h4>
+    <p>Switch to the large / two-swap trace. Two things to show:</p>
+    <ul>
+      <li><b>Concentrated deepens the book</b>: 2996.67 vs 2961.47 USDC at the same fee — more output, same reserves.</li>
+      <li><b>Decay makes size/frequency cost more</b>: three successive swaps return 14244 → 12951 → 11826 — the curve recovers as the offset decays.</li>
+    </ul>">
+    <div class="reveal kicker">The “sophisticated position” beat</div>
+    <h2 class="reveal">Composition you can <span class="accent">see</span></h2>
+    <div class="reveal stat-row">
+      <div class="stat"><div class="n green">2996.67</div><div class="l">USDC — concentrated</div></div>
+      <div class="stat"><div class="n dim" style="color:var(--dim)">2961.47</div><div class="l">USDC — plain x·y=k (same fee)</div></div>
+    </div>
+    <p class="reveal lead" style="margin-top:1.6rem">Concentrating liquidity into a band returns <strong>more</strong> for the
+      same reserves. And under decay, successive same-direction swaps cost progressively more —</p>
+    <pre class="reveal"><span class="c"># three swaps, decay offset still live</span>
+out₁ <span class="g">14244.9</span>  →  out₂ <span class="o">12951.7</span>  →  out₃ <span class="o">11826.0</span>  <span class="c">USDC</span>
+<span class="c"># the curve recovers as the offset decays toward zero</span></pre>
+  </section>
+
+  <!-- 9 — WHY IT SCORES -->
+  <section class="slide" data-notes="
+    <h4>Why this fits the bounty (≈20s)</h4>
+    <ul>
+      <li>Direct SwapVM, multiple real opcodes — the higher-scoring path.</li>
+      <li>Real on-chain transfers against the deployed contract.</li>
+      <li>The visualizer is a genuinely useful dev tool for an opaque, dev-preview protocol.</li>
+      <li>Clean, branch-per-agent commit history — itself a scored requirement.</li>
+    </ul>">
+    <div class="reveal kicker">Why it fits the brief</div>
+    <h2 class="reveal">Built for how this bounty is judged</h2>
+    <ul class="reveal points">
+      <li><strong>Direct SwapVM, multiple opcodes</strong> — the explicitly higher-scoring path, composed not monolithic</li>
+      <li><strong>Real on-chain execution</strong> — transfers through the live deployment on a fork, not a mock</li>
+      <li><strong>A real tool</strong> — a step-through debugger for an opaque, dev-preview instruction set</li>
+      <li><strong>Honest engineering</strong> — read the real sources, documented where the plan met the protocol</li>
+      <li><strong>Clean git history</strong> — branch-per-stage, conventional commits, reviewed PRs</li>
+    </ul>
+  </section>
+
+  <!-- 10 — CLOSE / RUNBOOK -->
+  <section class="slide" data-notes="
+    <h4>Live-demo runbook (keep this open in a second window)</h4>
+    <ul>
+      <li>Terminal 1: <code>export PATH=&quot;$HOME/.foundry/bin:$PATH&quot;</code> then <code>set -a; source .env; set +a</code></li>
+      <li><code>forge test -vv</code> — beat #1 (transfers). Point at the 1 WETH → 2970.297 line + 12 passing.</li>
+      <li>Terminal 2: <code>cd viz &amp;&amp; npm run dev</code> → open localhost:5173 — beats #2 &amp; #3 (step through, switch traces).</li>
+      <li>Regenerate traces if asked: <code>forge test --match-contract TraceExporter &amp;&amp; node viz/scripts/copy-traces.mjs</code></li>
+      <li>Fallback if wifi/RPC dies: the deck + the already-built <code>viz/dist</code> render offline; tests need the fork RPC.</li>
+    </ul>">
+    <div class="reveal kicker">Thanks</div>
+    <h2 class="reveal">Aqua<span class="accent">Lab</span> — composed SwapVM, made visible</h2>
+    <p class="reveal lead">Strategy + fork tests + instruction-trace visualizer.
+      Every opcode real, every transfer on-chain, every trace faithful to the run that produced it.</p>
+    <div class="reveal title-meta">
+      <span class="pill mono">forge test -vv</span>
+      <span class="pill mono">cd viz &amp;&amp; npm run dev</span>
+      <span class="pill">press <b>S</b> for speaker notes</span>
+    </div>
+  </section>
+
+</div>
+
+<div class="bar" id="bar"></div>
+<div class="counter" id="counter">1 / 10</div>
+<div class="brand">Aqua<b>Lab</b> · 1inch Build an Aqua App</div>
+<div class="hint">← → navigate · S notes · F fullscreen</div>
+<div id="notes"><h4>Speaker notes</h4><div id="notes-body"></div></div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const bar = document.getElementById('bar');
+  const counter = document.getElementById('counter');
+  const notes = document.getElementById('notes');
+  const notesBody = document.getElementById('notes-body');
+  let i = 0, notesOn = false;
+
+  function render() {
+    slides.forEach((s, n) => s.classList.toggle('active', n === i));
+    bar.style.width = ((i + 1) / slides.length * 100) + '%';
+    counter.textContent = (i + 1) + ' / ' + slides.length;
+    notesBody.innerHTML = slides[i].dataset.notes || '<p class="dim">No notes.</p>';
+    location.hash = i + 1;
+  }
+  function go(n) { i = Math.max(0, Math.min(slides.length - 1, n)); render(); }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { go(i + 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { go(i - 1); }
+    else if (e.key === 'Home') { go(0); }
+    else if (e.key === 'End') { go(slides.length - 1); }
+    else if (e.key.toLowerCase() === 's') { notesOn = !notesOn; notes.classList.toggle('show', notesOn); }
+    else if (e.key.toLowerCase() === 'f') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    }
+  });
+  // click right/left half to advance
+  document.getElementById('deck').addEventListener('click', (e) => {
+    go(i + (e.clientX > window.innerWidth / 2 ? 1 : -1));
+  });
+
+  const fromHash = parseInt(location.hash.replace('#', ''), 10);
+  if (fromHash >= 1 && fromHash <= slides.length) i = fromHash - 1;
+  render();
+</script>
+</body>
+</html>

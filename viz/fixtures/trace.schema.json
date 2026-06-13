@@ -1,0 +1,353 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/zambrose/aqualab/viz/fixtures/trace.schema.json",
+  "title": "SwapVM Instruction Trace",
+  "description": "Schema for a SwapVM strategy execution trace produced by AquaLab. Version 1.0.",
+  "type": "object",
+  "required": ["schemaVersion", "metadata", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version — must be '1.0' for this draft."
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "strategyHash",
+        "blockNumber",
+        "txHash",
+        "tokenA",
+        "tokenB",
+        "swapAmountIn",
+        "swapAmountOut",
+        "swapDirection",
+        "totalFeesBps",
+        "quoteEqualsSwap"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "strategyHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{64}$",
+          "description": "32-byte keccak256 strategy hash (hex, 0x-prefixed)."
+        },
+        "blockNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Block in which the swap executed (or simulated)."
+        },
+        "txHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{64}$",
+          "description": "Transaction hash. Use a descriptive placeholder (e.g. 0x000...0001) for simulated traces."
+        },
+        "tokenA": {
+          "$ref": "#/$defs/tokenInfo",
+          "description": "First token (conventionally the token sold by the maker, e.g. WETH)."
+        },
+        "tokenB": {
+          "$ref": "#/$defs/tokenInfo",
+          "description": "Second token (conventionally the token bought by the maker, e.g. USDC)."
+        },
+        "swapAmountIn": {
+          "type": "string",
+          "pattern": "^[0-9]+$",
+          "description": "Gross input amount (smallest unit, base-10 string to preserve uint256)."
+        },
+        "swapAmountOut": {
+          "type": "string",
+          "pattern": "^[0-9]+$",
+          "description": "Net output amount after all fees and decay adjustments."
+        },
+        "swapDirection": {
+          "type": "string",
+          "enum": ["A_TO_B", "B_TO_A"],
+          "description": "Whether the taker sells tokenA and buys tokenB, or vice-versa."
+        },
+        "totalFeesBps": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Effective total fee in basis points (out of 10000, i.e. 30 = 0.30%) applied across all steps."
+        },
+        "quoteEqualsSwap": {
+          "type": "boolean",
+          "description": "True when the router's static quote() returned exactly the (amountIn, amountOut) the real swap() produced for this trade — i.e. the trace's pricing is quote/swap-consistent."
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional human-readable label for the trace (shown in UI dropdown)."
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered list of SwapVM instruction executions, from first to last.",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    }
+  },
+  "$defs": {
+    "tokenInfo": {
+      "type": "object",
+      "required": ["address", "symbol", "decimals"],
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{40}$"
+        },
+        "symbol": { "type": "string" },
+        "decimals": { "type": "integer", "minimum": 0, "maximum": 18 }
+      }
+    },
+    "bigint": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Non-negative integer stored as base-10 string (safe for uint256)."
+    },
+    "hexBytes": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]*$"
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "stepIndex",
+        "opcode",
+        "description",
+        "params",
+        "registers",
+        "balancesBefore",
+        "balancesAfter",
+        "curveState"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "stepIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Zero-based index of this step in the pipeline."
+        },
+        "opcode": {
+          "type": "string",
+          "description": "SwapVM opcode name exactly as it appears in the AquaOpcodes instruction set.",
+          "examples": [
+            "_salt",
+            "_decayXD",
+            "_flatFeeAmountInXD",
+            "_xycSwapXD",
+            "_xycConcentrateGrowLiquidity2D",
+            "BALANCE_SETUP"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable one-liner explaining what this step does in context."
+        },
+        "params": {
+          "type": "object",
+          "description": "Decoded opcode parameters — shape varies by opcode (see below).",
+          "anyOf": [
+            { "$ref": "#/$defs/paramsSalt" },
+            { "$ref": "#/$defs/paramsDecayXD" },
+            { "$ref": "#/$defs/paramsFlatFeeAmountInXD" },
+            { "$ref": "#/$defs/paramsXycSwapXD" },
+            { "$ref": "#/$defs/paramsXycConcentrateGrowLiquidity2D" },
+            { "$ref": "#/$defs/paramsGeneric" }
+          ]
+        },
+        "registers": { "$ref": "#/$defs/swapRegisters" },
+        "balancesBefore": { "$ref": "#/$defs/balanceSnapshot" },
+        "balancesAfter": { "$ref": "#/$defs/balanceSnapshot" },
+        "curveState": { "$ref": "#/$defs/curveState" },
+        "gasUsed": {
+          "type": "integer",
+          "description": "Gas consumed by this instruction (optional, for display)."
+        },
+        "revertReason": {
+          "type": ["string", "null"],
+          "description": "Non-null if this step reverted (should only happen in error traces)."
+        }
+      }
+    },
+    "paramsSalt": {
+      "type": "object",
+      "required": ["type", "salt"],
+      "properties": {
+        "type": { "type": "string", "const": "_salt" },
+        "salt": { "$ref": "#/$defs/bigint", "description": "64-bit salt value used to perturb the order hash (ensures unique strategy identifiers)." }
+      },
+      "additionalProperties": false
+    },
+    "paramsDecayXD": {
+      "type": "object",
+      "required": ["type", "decayPeriodSeconds", "elapsedSeconds", "currentOffsetIn", "currentOffsetOut", "virtualReservesBefore", "virtualReservesAfter"],
+      "properties": {
+        "type": { "type": "string", "const": "_decayXD" },
+        "decayPeriodSeconds": {
+          "type": "number",
+          "description": "Full decay period in seconds (the window over which the offset linearly decays to 0)."
+        },
+        "elapsedSeconds": {
+          "type": "number",
+          "description": "Seconds elapsed since last interaction (drives decay magnitude)."
+        },
+        "currentOffsetIn": {
+          "$ref": "#/$defs/bigint",
+          "description": "Current stored offset for tokenIn (decayed from prior trades). Added to balanceIn as virtual reserve boost."
+        },
+        "currentOffsetOut": {
+          "$ref": "#/$defs/bigint",
+          "description": "Current stored offset for tokenOut (decayed from prior trades). Subtracted from balanceOut as virtual reserve penalty."
+        },
+        "virtualReservesBefore": { "$ref": "#/$defs/reservePair" },
+        "virtualReservesAfter": { "$ref": "#/$defs/reservePair" }
+      },
+      "additionalProperties": true
+    },
+    "paramsFlatFeeAmountInXD": {
+      "type": "object",
+      "required": ["type", "feeBps", "humanFeeBps", "grossAmountIn", "feeAmount", "netAmountIn"],
+      "properties": {
+        "type": { "type": "string", "const": "_flatFeeAmountInXD" },
+        "feeBps": {
+          "type": "number",
+          "description": "Fee rate in SwapVM units (1e9 = 100%). E.g. 3_000_000 = 0.30%."
+        },
+        "humanFeeBps": {
+          "type": "number",
+          "description": "Fee rate in traditional basis points (out of 10000). E.g. 30 = 0.30%."
+        },
+        "grossAmountIn": { "$ref": "#/$defs/bigint", "description": "Full taker-defined amountIn before fee deduction." },
+        "feeAmount": { "$ref": "#/$defs/bigint", "description": "Fee deducted from amountIn (ceiling division): ceil(grossAmountIn * feeBps / 1e9)." },
+        "netAmountIn": { "$ref": "#/$defs/bigint", "description": "Net input the AMM sees: grossAmountIn - feeAmount." }
+      },
+      "additionalProperties": false
+    },
+    "paramsXycSwapXD": {
+      "type": "object",
+      "required": ["type", "virtualBalanceIn", "virtualBalanceOut", "netAmountIn", "amountOut"],
+      "properties": {
+        "type": { "type": "string", "const": "_xycSwapXD" },
+        "virtualBalanceIn": { "$ref": "#/$defs/bigint", "description": "Effective balanceIn seen by the AMM (real + decay offset adjustment)." },
+        "virtualBalanceOut": { "$ref": "#/$defs/bigint", "description": "Effective balanceOut seen by the AMM (real - decay offset adjustment)." },
+        "netAmountIn": { "$ref": "#/$defs/bigint", "description": "Net amountIn after fee deduction." },
+        "amountOut": { "$ref": "#/$defs/bigint", "description": "Computed output: netAmountIn * virtualBalanceOut / (virtualBalanceIn + netAmountIn)." }
+      },
+      "additionalProperties": false
+    },
+    "paramsXycConcentrateGrowLiquidity2D": {
+      "type": "object",
+      "required": ["type", "sqrtPriceMin", "sqrtPriceMax", "liquidity", "virtualBalanceIn", "virtualBalanceOut", "netAmountIn", "amountOut"],
+      "properties": {
+        "type": { "type": "string", "const": "_xycConcentrateGrowLiquidity2D" },
+        "sqrtPriceMin": { "$ref": "#/$defs/bigint", "description": "sqrt(P_min) in 1e18 fixed-point, P = tokenGt/tokenLt." },
+        "sqrtPriceMax": { "$ref": "#/$defs/bigint", "description": "sqrt(P_max) in 1e18 fixed-point, P = tokenGt/tokenLt." },
+        "liquidity": { "$ref": "#/$defs/bigint", "description": "Computed L value (virtual liquidity parameter)." },
+        "virtualBalanceIn": { "$ref": "#/$defs/bigint", "description": "Virtual balanceIn = real balanceIn + L-based extension." },
+        "virtualBalanceOut": { "$ref": "#/$defs/bigint", "description": "Virtual balanceOut = real balanceOut + L-based extension." },
+        "netAmountIn": { "$ref": "#/$defs/bigint", "description": "Net amountIn after fee deduction." },
+        "amountOut": { "$ref": "#/$defs/bigint", "description": "Computed output: netAmountIn * virtualBalanceOut / (virtualBalanceIn + netAmountIn)." }
+      },
+      "additionalProperties": false
+    },
+    "paramsGeneric": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "tokenAmount": {
+      "type": "object",
+      "required": ["token", "amount"],
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "type": "string",
+          "enum": ["tokenA", "tokenB"],
+          "description": "Reference to tokenA or tokenB defined in metadata."
+        },
+        "amount": { "$ref": "#/$defs/bigint" }
+      }
+    },
+    "swapRegisters": {
+      "type": "object",
+      "required": ["balanceIn", "balanceOut", "amountIn", "amountOut", "amountNetPulled"],
+      "additionalProperties": false,
+      "description": "The 5 SwapVM `SwapRegisters` (Context.swap, see swap-vm VM.sol) AS OF AFTER this instruction executed. base-10 strings (uint256-safe). balanceIn/balanceOut are the virtual reserves the VM is pricing against; amountIn/amountOut are the in/out registers; amountNetPulled is the net input the maker side receives.",
+      "properties": {
+        "balanceIn": { "$ref": "#/$defs/bigint", "description": "ctx.swap.balanceIn after this step (virtual reserve of tokenIn)." },
+        "balanceOut": { "$ref": "#/$defs/bigint", "description": "ctx.swap.balanceOut after this step (virtual reserve of tokenOut)." },
+        "amountIn": { "$ref": "#/$defs/bigint", "description": "ctx.swap.amountIn after this step." },
+        "amountOut": { "$ref": "#/$defs/bigint", "description": "ctx.swap.amountOut after this step." },
+        "amountNetPulled": { "$ref": "#/$defs/bigint", "description": "ctx.swap.amountNetPulled after this step (net input pulled to the maker)." }
+      }
+    },
+    "balanceSnapshot": {
+      "type": "object",
+      "required": ["makerTokenA", "makerTokenB", "takerTokenA", "takerTokenB"],
+      "additionalProperties": false,
+      "description": "Token balances at a specific point in execution.",
+      "properties": {
+        "makerTokenA": { "$ref": "#/$defs/bigint", "description": "Maker's tokenA balance (smallest unit)." },
+        "makerTokenB": { "$ref": "#/$defs/bigint", "description": "Maker's tokenB balance (smallest unit)." },
+        "takerTokenA": { "$ref": "#/$defs/bigint", "description": "Taker's tokenA balance (smallest unit)." },
+        "takerTokenB": { "$ref": "#/$defs/bigint", "description": "Taker's tokenB balance (smallest unit)." }
+      }
+    },
+    "reservePair": {
+      "type": "object",
+      "required": ["reserveA", "reserveB"],
+      "additionalProperties": false,
+      "properties": {
+        "reserveA": { "$ref": "#/$defs/bigint" },
+        "reserveB": { "$ref": "#/$defs/bigint" }
+      }
+    },
+    "curveState": {
+      "type": "object",
+      "required": ["realReserves", "virtualReserves", "spotPriceAInB", "feeBps"],
+      "additionalProperties": false,
+      "description": "AMM curve state after this step completes.",
+      "properties": {
+        "realReserves": {
+          "$ref": "#/$defs/reservePair",
+          "description": "Real (physical) token reserves in the pool."
+        },
+        "virtualReserves": {
+          "$ref": "#/$defs/reservePair",
+          "description": "Virtual reserves including MEV-protection offset from _decayXD and/or concentrated-liquidity extension from _xycConcentrateGrowLiquidity2D."
+        },
+        "spotPriceAInB": {
+          "type": "number",
+          "description": "Spot price: how many units of tokenB per 1 unit of tokenA (human-readable, e.g. 3000 for $3000/ETH)."
+        },
+        "feeBps": {
+          "type": "number",
+          "description": "Fee in traditional basis points (out of 10000) applied at this step."
+        },
+        "concentratedRange": {
+          "type": ["object", "null"],
+          "description": "Non-null when active concentrated range exists.",
+          "required": ["priceLower", "priceUpper", "isInRange"],
+          "additionalProperties": false,
+          "properties": {
+            "priceLower": { "type": "number", "description": "Lower price bound of the concentrated range (tokenB per tokenA)." },
+            "priceUpper": { "type": "number", "description": "Upper price bound of the concentrated range (tokenB per tokenA)." },
+            "isInRange": { "type": "boolean", "description": "Whether the current spot price is within [priceLower, priceUpper]." }
+          }
+        },
+        "swapPointX": {
+          "type": ["number", "null"],
+          "description": "Normalised X-coordinate of the swap point on the price curve (0–1), for animation."
+        }
+      }
+    }
+  }
+}
