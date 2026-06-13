@@ -312,7 +312,7 @@ The final step's `params.amountOut` is asserted to equal the real on-chain measu
 
 This is Mooniswap-style MEV protection: the written offsets only activate for the **reverse** direction (USDC→WETH). A second WETH→USDC same-direction swap does NOT see the offsets from the first (it reads different keys). Decay therefore primarily protects against sandwich attacks and reverse-direction follow-up trades.
 
-### 10.3 Regen command (one command to regenerate both traces from scratch)
+### 10.3 Regen command (one command to regenerate ALL THREE traces from scratch)
 
 ```bash
 export PATH="$HOME/.foundry/bin:$PATH"
@@ -320,7 +320,53 @@ set -a; source .env; set +a
 forge test --match-contract TraceExporter && node viz/scripts/copy-traces.mjs && cd viz && npm run validate
 ```
 
-This runs the fork test, copies `./traces/*.json` to `viz/fixtures/*.fixture.json`, and validates both against `trace.schema.json`.
+This runs the fork tests (`test_ExportTraces` + `test_ExportTwoSwapDecay`), copies `./traces/*.json` to
+`viz/fixtures/*.fixture.json`, and validates all three fixtures against `trace.schema.json`.
+
+### 10.5 Third trace: two-swap decay demo (Agent 3b)
+
+**Why same-direction swaps don't see each other's offsets.** `Decay._decayXD` keys offsets on
+`(orderHash, token, swapDirection)` where `swapDirection` is the `bool buyOrSell` flag. For WETH→USDC:
+
+- **Writes**: `_offsets[hash][WETH][false]`, `_offsets[hash][USDC][true]`
+- **Reads** of the NEXT WETH→USDC swap: `_offsets[hash][WETH][true]`, `_offsets[hash][USDC][false]`
+
+The read/write keys are COMPLEMENTARY (`true` vs `false`). A same-direction follow-up swap reads the
+OPPOSITE direction's offsets — which are zero on a fresh pool. So two consecutive WETH→USDC trades on the
+same pool show offset=0 for the second one just as for the first. This is by design: the decay offset
+creates a "virtual depth" that punishes REVERSE direction trades (e.g. sandwich bots), not same-direction
+traders.
+
+**How to get a non-zero offset on the traced swap.** The approach is:
+1. Execute a FIRST swap (WETH→USDC). This writes `_offsets[hash][WETH][false]` and `_offsets[hash][USDC][true]`.
+2. Advance time by `T < decayPeriod` via `vm.warp(block.timestamp + T)`.
+3. Execute the SECOND (traced) swap in the REVERSE direction (USDC→WETH). This reads exactly the offsets
+   written in step 1:
+   - `_offsets[hash][USDC][true]` → `offsetIn` (added to virtual USDC balance)
+   - `_offsets[hash][WETH][false]` → `offsetOut` (subtracted from virtual WETH balance)
+4. The decay factor is `(decayPeriod - T) / decayPeriod`, which is strictly between 0 and 1.
+
+**Concrete values in `trace-two-swap-decay.fixture.json` (pool salt=903):**
+
+| Field | Value |
+|---|---|
+| First swap | 5 WETH → 14,244,892,127 USDC (salt=903 pool) |
+| Pool reserves after swap1 | 105 WETH, 285,755 USDC |
+| Time advance (`vm.warp`) | +1200 seconds |
+| `decayPeriod` | 3600 seconds |
+| `elapsedSeconds` | 1200 |
+| `decayFactor` | 2400/3600 = 0.6666... ≈ 66.66% |
+| `currentOffsetIn` (USDC) | 9,496,594,751 (~9,497 USDC = out1 × 2/3) |
+| `currentOffsetOut` (WETH) | 3,333,333,333,333,333,333 (~3.33 WETH = 5e18 × 2/3) |
+| Second swap (traced) | 5,000 USDC → 1,688,029,241,275,115,947 WETH (~1.688 WETH) |
+| `tracedOut == realOut` | `assertEq` passes (both = 1688029241275115947) |
+
+The virtual reserves seen by the second swap's AMM (after decay adjustment):
+- Virtual USDC (tokenIn) = 285,755 + 9,497 = **295,252 USDC** (deeper → cheaper WETH)
+- Virtual WETH (tokenOut) = 105 − 3.33 = **101.67 WETH** (shallower → more expensive WETH)
+
+Net effect: the MEV protection makes WETH appear MORE expensive to the second buyer by reducing effective
+virtual WETH supply. The spot price shifts from ~2721 to ~2904 USDC/WETH in the virtual view.
 
 ### 10.4 Opcode name changes (schema + types + stepPanel)
 
